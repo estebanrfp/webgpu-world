@@ -184,6 +184,7 @@
       rotateY,
       translate,
       scale,
+      getTerrainHeightAt,
       // Lighting / Day-Night Cycle
       getLightDirection,
       getFormattedTime,
@@ -1288,13 +1289,8 @@
 
       // Update NPCs (AI behavior, animation, position)
       if (npcSystem.isReady()) {
-        // Simple terrain height function for NPCs (uses same height as player when near)
-        const getTerrainHeightForNPC = (x, z) => {
-          // NPCs use ground level as approximation
-          // For more accuracy, could compute per-NPC but this is simpler
-          return gpuTerrainHeight;
-        };
-        npcSystem.update(dt, charPos.x, charPos.y, charPos.z, getTerrainHeightForNPC);
+        // Use accurate terrain height calculation (matches shader)
+        npcSystem.update(dt, charPos.x, charPos.y, charPos.z, getTerrainHeightAt);
         npcSystem.updateUniforms(CONFIG.character.scale);  // Fixed: was modelScale (undefined)
       }
 
