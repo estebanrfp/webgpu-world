@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@gltf-transform/functions": "4.2.1",
     "ktx-parse": "1.1.0"
   },
   "devDependencies": {
