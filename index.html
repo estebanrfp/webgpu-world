@@ -1295,7 +1295,7 @@
           return gpuTerrainHeight;
         };
         npcSystem.update(dt, charPos.x, charPos.y, charPos.z, getTerrainHeightForNPC);
-        npcSystem.updateUniforms(CONFIG.character.modelScale);
+        npcSystem.updateUniforms(CONFIG.character.scale);  // Fixed: was modelScale (undefined)
       }
 
       // === Third Person Camera ===
