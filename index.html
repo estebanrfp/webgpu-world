@@ -362,11 +362,7 @@
     const npcSystem = createNPCSystem(device, {
       npcCount: 10,
       terrainSize: CONFIG.geometry.terrain.size,
-      detectionRadius: 40,
-      stopDistance: 8,
-      wanderRadius: 30,
-      minSeparation: 4,
-      baseSpeed: 15,
+      // Uses defaults from npc.js: always follows player, spawns nearby
     });
     // Start loading NPCs asynchronously
     npcSystem.init();
