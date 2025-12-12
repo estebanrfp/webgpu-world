@@ -1,105 +1,105 @@
 # Copilot Instructions - WebGPU Virtual World Engine
 
-## ⚠️ Reglas de Interacción
+## ⚠️ Interaction Rules
 
-1. **SIEMPRE preguntar antes de hacer cambios grandes** - Confirmar con el usuario.
-2. **NO ejecutar el servidor** - El usuario lo hace manualmente.
-3. **Ser conciso** - Respuestas cortas y directas.
-
----
-
-## 📋 Descripción del Proyecto
-
-**Mundo virtual 3D** construido con **WebGPU 100% nativo**. Terreno infinito procedural, cielo dinámico, océano, efectos climáticos (lluvia, nieve, relámpagos), avatar animado con sistema de huesos, y efectos underwater.
+1. **ALWAYS confirm before large refactors** - Ask the user first.
+2. **Do NOT run the dev server** - The user handles runtime commands.
+3. **Be concise** - Keep responses short and direct.
 
 ---
 
-## 🏗️ Arquitectura del Proyecto
+## 📋 Project Overview
 
-### Estructura de Carpetas
+**3D virtual world** built with **100% native WebGPU**. Infinite procedural terrain, dynamic sky, ocean simulation, weather effects (rain, snow, lightning), animated avatar with skeletal rig, and underwater rendering.
+
+---
+
+## 🏗️ Project Architecture
+
+### Folder Structure
 
 ```
 TypeGPU-Project-World/
-├── index.html              # Aplicación principal (monolítico, en proceso de modularización)
-├── lib/                    # ⭐ BIBLIOTECA MODULAR - USAR PARA CÓDIGO NUEVO
-│   ├── index.js            # Punto de entrada principal - exporta todos los módulos
-│   ├── core/               # Funcionalidad core del engine
-│   │   ├── index.js        # Exports del core
-│   │   ├── config.js       # CONFIG con todos los parámetros del mundo
-│   │   ├── init-native.js  # Inicialización WebGPU nativa (adapter, device)
-│   │   └── uniforms.js     # Helpers para uniform buffers (createCameraData, etc.)
-│   ├── textures/           # Sistema de carga de texturas
-│   │   ├── index.js        # API unificada (loadTexture)
+├── index.html              # Main application (monolithic, being modularized)
+├── lib/                    # ⭐ MODULAR LIBRARY - PLACE NEW CODE HERE
+│   ├── index.js            # Main entry point exporting all modules
+│   ├── core/               # Engine core functionality
+│   │   ├── index.js        # Core exports
+│   │   ├── config.js       # CONFIG with every world parameter
+│   │   ├── init-native.js  # Native WebGPU init (adapter, device)
+│   │   └── uniforms.js     # Uniform helpers (createCameraData, etc.)
+│   ├── textures/           # Texture loading system
+│   │   ├── index.js        # Unified API (loadTexture)
 │   │   ├── ktx2-loader.js  # KTX2 + Basis Universal compression
-│   │   └── image-loader.js # Carga PNG/JPG/WebP
-│   ├── shaders/            # Shaders WGSL (TODO: extraer de index.html)
-│   ├── systems/            # Sistemas del mundo (TODO: extraer de index.html)
-│   ├── physics/            # Sistema de física (TODO: extraer de index.html)
-│   ├── input/              # Manejo de input (TODO: extraer de index.html)
-│   └── avatar/             # Carga de avatares/GLB (TODO: extraer de index.html)
-├── assets/                 # Assets del mundo (modelos, texturas, audio)
-│   ├── character/          # Modelos GLB y archivos fuente
-│   ├── sounds/             # Assets de audio
-│   └── textures/           # Texturas (.ktx2, .png, .jpg)
-├── public/                 # Assets estáticos
+│   │   └── image-loader.js # PNG/JPG/WebP loading
+│   ├── shaders/            # WGSL shaders (TODO: extract from index.html)
+│   ├── systems/            # World systems (TODO: extract from index.html)
+│   ├── physics/            # Physics system (TODO: extract from index.html)
+│   ├── input/              # Input handling (TODO: extract from index.html)
+│   └── avatar/             # Avatar/GLB loading (TODO: extract from index.html)
+├── assets/                 # World assets (models, textures, audio)
+│   ├── character/          # GLB models and source assets
+│   ├── sounds/             # Audio assets
+│   └── textures/           # Textures (.ktx2, .png, .jpg)
+├── public/                 # Static assets
 ```
 
-### ❌ NO USAR
+### ❌ DO NOT USE
 
-- **`src/`** - Carpeta deprecada, será eliminada. NO crear archivos aquí.
+- **`src/`** - Deprecated folder, scheduled for removal. Do NOT create new files here.
 
 ---
 
-## 🎯 Principios de Desarrollo
+## 🎯 Development Principles
 
-### Patrón de Módulos
+### Module Pattern
 
-Cada módulo exporta funciones que reciben dependencias como parámetros:
+Every module exports functions that receive dependencies explicitly:
 
 ```javascript
-// ✅ CORRECTO - device como parámetro
+// ✅ CORRECT - device passed as argument
 export async function loadTexture(device, url) { ... }
 export function createPipeline(device, shaderModule, format) { ... }
 
-// ❌ INCORRECTO - NO usar variables globales
-export async function loadTexture(url) { 
-  device.createTexture(...) // device desde scope global - MAL
+// ❌ INCORRECT - NO implicit globals
+export async function loadTexture(url) {
+  device.createTexture(...) // Using a global device is WRONG
 }
 ```
 
-### Stack Tecnológico
+### Technology Stack
 
-| Tecnología | Uso |
-|------------|-----|
-| WebGPU Nativo | 100% - Rendering, texturas, pipelines, buffers |
-| WGSL | Shaders nativos |
-| Vite + pnpm | Build system |
-| ktx-parse | Carga de texturas KTX2 |
+| Technology   | Purpose                                      |
+|--------------|----------------------------------------------|
+| Native WebGPU| Rendering, textures, pipelines, buffers      |
+| WGSL         | Native shader language                       |
+| Vite + pnpm  | Build tooling                                |
+| ktx-parse    | KTX2 texture loading                         |
 
-**NO usamos**: Three.js, Babylon.js, TypeGPU - es un engine custom desde cero con WebGPU puro.
-
----
-
-## 📍 Dónde Añadir Código Nuevo
-
-| Tipo de Feature | Ubicación |
-|-----------------|-----------|
-| Valores de configuración | `lib/core/config.js` |
-| Inicialización GPU | `lib/core/init-native.js` |
-| Uniform buffer helpers | `lib/core/uniforms.js` |
-| Carga de texturas | `lib/textures/` |
-| Shaders WGSL | `lib/shaders/*.wgsl` (crear si no existe) |
-| Sistemas (sky, terrain, ocean) | `lib/systems/*.js` (crear si no existe) |
-| Física/movimiento | `lib/physics/*.js` (crear si no existe) |
-| Input teclado/mouse | `lib/input/*.js` (crear si no existe) |
-| Avatar/personaje | `lib/avatar/*.js` (crear si no existe) |
-| Utilidades | `lib/utils/*.js` (crear si no existe) |
+**NOT using**: Three.js, Babylon.js, TypeGPU – this is a custom engine built directly on WebGPU.
 
 ---
 
-## 📦 Patrón de Exports
+## 📍 Where to Add New Code
 
-Cada carpeta de módulo tiene un `index.js` que re-exporta:
+| Feature Type            | Location                      |
+|-------------------------|-------------------------------|
+| Configuration values    | `lib/core/config.js`          |
+| GPU initialization      | `lib/core/init-native.js`     |
+| Uniform buffer helpers  | `lib/core/uniforms.js`        |
+| Texture loading         | `lib/textures/`               |
+| WGSL shaders            | `lib/shaders/*.wgsl`          |
+| Systems (sky, terrain…) | `lib/systems/*.js`            |
+| Physics/movement        | `lib/physics/*.js`            |
+| Input handling          | `lib/input/*.js`              |
+| Avatar/character        | `lib/avatar/*.js`             |
+| Utilities               | `lib/utils/*.js`              |
+
+---
+
+## 📦 Export Pattern
+
+Each module folder exposes an `index.js` re-export:
 
 ```javascript
 // lib/textures/index.js
@@ -108,7 +108,7 @@ export { loadImageTexture } from './image-loader.js';
 export async function loadTexture(device, url) { ... }
 ```
 
-El `lib/index.js` principal exporta todo:
+The main `lib/index.js` re-exports everything:
 
 ```javascript
 export { CONFIG, AVATAR_URL, initGPU, createUniformBuffers, ... } from './core/index.js';
@@ -118,18 +118,18 @@ export { loadTexture, createSampler, ... } from './textures/index.js';
 
 ---
 
-## 🎮 Sistema de Uniform Buffers (WebGPU Nativo)
+## 🎮 Uniform Buffer System (Native WebGPU)
 
-Los uniform buffers se crean y actualizan con helpers nativos en `lib/core/uniforms.js`:
+Uniform buffers are created and updated with helpers in `lib/core/uniforms.js`:
 
 ```javascript
-// Crear buffer
+// Create buffer
 const cameraBuffer = device.createBuffer({
   size: CAMERA_BUFFER_SIZE,  // 112 bytes
   usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
 });
 
-// Actualizar buffer en render loop
+// Update buffer inside the render loop
 device.queue.writeBuffer(cameraBuffer, 0, createCameraData({
   viewProjection: vpMatrix,  // Float32Array(16)
   position: { x, y, z },
@@ -137,105 +137,105 @@ device.queue.writeBuffer(cameraBuffer, 0, createCameraData({
 }));
 ```
 
-### Helpers disponibles:
-| Helper | Buffer Size | Uso |
-|--------|-------------|-----|
-| `createCameraData()` | 112 bytes | Cámara principal |
-| `createTerrainData()` | 80 bytes | Terreno procedural |
-| `createOceanData()` | 384 bytes | Océano con olas |
-| `createCharacterData()` | 80 bytes | Avatar/personaje |
-| `createLightData()` | 80 bytes | Luz direccional + sombras |
-| `createUnderwaterData()` | 256 bytes | Efectos underwater |
-| `createGodRaysData()` | 32 bytes | Rayos de luz |
-| `createBubblesData()` | 32 bytes | Burbujas underwater |
-| `createRainData()` | 64 bytes | Partículas de lluvia |
-| `createSnowData()` | 48 bytes | Partículas de nieve |
-| `createLightningData()` | 32 bytes | Relámpagos |
+### Available Helpers
+| Helper                 | Size (bytes) | Purpose                      |
+|------------------------|--------------|------------------------------|
+| `createCameraData()`   | 112          | Main camera uniforms         |
+| `createTerrainData()`  | 80           | Procedural terrain           |
+| `createOceanData()`    | 384          | Ocean shading + waves        |
+| `createCharacterData()`| 80           | Avatar transform/color       |
+| `createLightData()`    | 80           | Directional light + shadows  |
+| `createUnderwaterData()`| 256         | Underwater post effects      |
+| `createGodRaysData()`  | 32           | Light shafts                 |
+| `createBubblesData()`  | 32           | Underwater bubbles           |
+| `createRainData()`     | 64           | Rain particles               |
+| `createSnowData()`     | 48           | Snow particles               |
+| `createLightningData()`| 32           | Lightning flashes            |
 
 ---
 
-## 🔧 Configuración del Mundo
+## 🔧 World Configuration
 
-Todos los parámetros están en `lib/core/config.js`:
+All parameters live in `lib/core/config.js`:
 
 ```javascript
 export const CONFIG = {
-  world: { ... },        // Dimensiones, chunk size
-  dayNight: { ... },     // Ciclo día/noche
-  ocean: { ... },        // Nivel de agua, olas
-  movement: { ... },     // Velocidades walk/run/jump
-  swimming: { ... },     // Mecánicas de natación
-  camera: { ... },       // Configuración de cámara
-  shadows: { ... },      // Calidad de sombras
-  audio: { ... },        // Configuración de sonido
-  animation: { ... },    // Velocidades de animación
-  underwater: { ... },   // Efectos bajo el agua
-  weather: { ... },      // Partículas lluvia/nieve
+  world: { ... },        // Dimensions, chunk size
+  dayNight: { ... },     // Day/night cycle options
+  ocean: { ... },        // Water elevation, waves
+  movement: { ... },     // Walk/run/jump speeds
+  swimming: { ... },     // Swimming mechanics
+  camera: { ... },       // Third-person camera tuning
+  shadows: { ... },      // Shadow quality settings
+  audio: { ... },        // Sound configuration
+  animation: { ... },    // Animation blending
+  underwater: { ... },   // Underwater visuals
+  weather: { ... },      // Rain/snow/lighting presets
 };
 ```
 
 ---
 
-## 🖼️ Sistema de Texturas
+## 🖼️ Texture System
 
-### KTX2 con Basis Universal
+### KTX2 with Basis Universal
 
-- Formatos soportados: BC3, BC1, BC7, ASTC, ETC2
-- 8x menos uso de VRAM
-- Detección automática de formato
+- Supported formats: BC3, BC1, BC7, ASTC, ETC2
+- Up to 8× lower VRAM usage
+- Automatic format detection
 
 ```javascript
-// Uso simple - detecta formato automáticamente
+// Simple usage – format detected automatically
 const texture = await loadTexture(device, './assets/textures/grass.ktx2');
 const texture = await loadTexture(device, './assets/textures/rock.png');
 ```
 
 ---
 
-## 📝 Importar en index.html
+## 📝 Importing in index.html
 
 ```javascript
-import { 
-  CONFIG, 
-  initGPU, 
+import {
+  CONFIG,
+  initGPU,
   createUniformBuffers,
-  loadTexture, 
+  loadTexture,
   isKTX2,
-  // ... otros exports
+  // ...more exports
 } from './lib/index.js';
 ```
 
 ---
 
-## 🚧 Pendiente de Modularizar
+## 🚧 Pending Modularization
 
-Aún en `index.html`, a extraer gradualmente:
+Still inside `index.html`, to be extracted gradually:
 
-1. **Shaders** (~2000 líneas) → `lib/shaders/`
-2. **Texturas procedurales** → `lib/textures/procedural.js`
-3. **Sistema de terreno** → `lib/systems/terrain.js`
-4. **Sistema de océano** → `lib/systems/ocean.js`
-5. **Sistema de cielo** → `lib/systems/sky.js`
-6. **Clima (lluvia/nieve)** → `lib/systems/weather.js`
-7. **Controlador de personaje** → `lib/systems/character.js`
-8. **Física** → `lib/physics/movement.js`
-9. **Manejo de input** → `lib/input/controls.js`
-10. **Cargador GLB** → `lib/avatar/glb-loader.js`
+1. **Shaders** (~2000 lines) → `lib/shaders/`
+2. **Procedural textures** → `lib/textures/procedural.js`
+3. **Terrain system** → `lib/systems/terrain.js`
+4. **Ocean system** → `lib/systems/ocean.js`
+5. **Sky system** → `lib/systems/sky.js`
+6. **Weather (rain/snow)** → `lib/systems/weather.js`
+7. **Character controller** → `lib/systems/character.js`
+8. **Physics** → `lib/physics/movement.js`
+9. **Input handling** → `lib/input/controls.js`
+10. **GLB loader** → `lib/avatar/glb-loader.js`
 
 ---
 
-## 🚀 Comandos
+## 🚀 Commands
 
 ```bash
-pnpm install    # Instalar dependencias
-pnpm dev        # Desarrollo
-pnpm build      # Build producción
-pnpm preview    # Preview del build
+pnpm install    # Install dependencies
+pnpm dev        # Start development server
+pnpm build      # Production build
+pnpm preview    # Preview production build
 ```
 
 ---
 
-## 📚 Referencias
+## 📚 References
 
 - [WebGPU Specification](https://www.w3.org/TR/webgpu/)
 - [WGSL Specification](https://www.w3.org/TR/WGSL/)
