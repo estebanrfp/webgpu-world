@@ -1,0 +1,2578 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OVGRID</title>
+  <!-- Basis Universal Transcoder -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/libs/basis/basis_transcoder.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    #ui {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      color: white;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 15px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      backdrop-filter: blur(10px);
+      z-index: 100;
+    }
+
+    #ui h1 {
+      font-size: 18px;
+      margin-bottom: 12px;
+      color: #4fc3f7;
+    }
+
+    #ui p {
+      margin: 4px 0;
+    }
+
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: white;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 15px;
+      border-radius: 10px;
+      font-size: 13px;
+      z-index: 100;
+    }
+
+    kbd {
+      background: rgba(255, 255, 255, 0.15);
+      padding: 3px 7px;
+      border-radius: 4px;
+      margin: 0 2px;
+      font-family: inherit;
+    }
+
+    #loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-size: 1.5rem;
+      text-align: center;
+      z-index: 200;
+    }
+
+    #error {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: #d32f2f;
+      color: white;
+      padding: 30px 40px;
+      border-radius: 12px;
+      text-align: center;
+      z-index: 300;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="loading">🌍 Initializing WebGPU World...</div>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="ui" class="hidden">
+    <h1>🌍 OVGRID</h1>
+    <p>FPS: <span id="fps">0</span></p>
+    <p>Position: <span id="position">0, 50, 0</span></p>
+    <p>Time: <span id="time">12:00</span></p>
+  </div>
+
+  <div id="controls" class="hidden">
+    <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> - Move</p>
+    <p><kbd>Space</kbd> - Jump | <kbd>F</kbd> - Fly (look up/down to ascend/descend)</p>
+    <p><kbd>Shift</kbd> - Sprint</p>
+    <p>Drag mouse - Look around</p>
+    <p><kbd>1</kbd><kbd>2</kbd> - Clouds | <kbd>0</kbd> - Clear</p>
+    <p><kbd>3</kbd> - Rain | <kbd>4</kbd> - Heavy | <kbd>5</kbd> - Storm | <kbd>6</kbd> - Snow</p>
+  </div>
+
+  <div id="error">
+    <h2>⚠️ Error</h2>
+    <p id="error-msg">WebGPU not supported</p>
+  </div>
+
+  <script type="module">
+    // ============================================
+    // WebGPU Native Virtual World - Main Entry
+    // ============================================
+    
+    // Import from lib modules
+    import { 
+      CONFIG, 
+      AVATAR_URL,
+      initGPU, 
+      createUniformBuffers,
+      // Uniform data creators
+      createCameraData,
+      createTerrainData,
+      createCharacterData,
+      createLightData,
+      createOceanData,
+      createUnderwaterData,
+      createGodRaysData,
+      createBubblesData,
+      createRainData,
+      createLightningData,
+      createSnowData,
+      LIGHT_UNIFORMS_SIZE,
+      GOD_RAYS_UNIFORMS_SIZE,
+      BUBBLES_UNIFORMS_SIZE,
+      RAIN_UNIFORMS_SIZE,
+      LIGHTNING_UNIFORMS_SIZE,
+      SNOW_UNIFORMS_SIZE,
+      loadTexture,
+      initBasisTranscoder,
+      isKTX2,
+      createGrassTexture,
+      createSandTexture,
+      createRockTexture,
+      createSnowTexture,
+      createFlatNormalTexture,
+      // Avatar/GLB
+      loadGLB,
+      loadTextureFromGLB,
+      extractMeshData,
+      extractSkeleton,
+      extractSkinningData,
+      extractAnimations,
+      createCharacterBuffers,
+      AnimationSystem,
+      // Shaders
+      skyShader,
+      oceanShader,
+      shadowTerrainShader,
+      shadowCharacterShader,
+      terrainShader,
+      characterShader,
+      underwaterShader,
+      godRaysShader,
+      bubblesShader,
+      rainShader,
+      lightningShader,
+      snowShader,
+      terrainHeightComputeShader,
+      // Geometry
+      createPlaneGeometry,
+      createGeometryBuffers,
+      // Math utilities
+      perspective,
+      lookAt,
+      mul,
+      identity,
+      rotateY,
+      translate,
+      scale,
+      // Lighting / Day-Night Cycle
+      getLightDirection,
+      getFormattedTime,
+    } from './lib/index.js';
+
+    // Make config globally accessible for debugging/tweaking
+    window.CONFIG = CONFIG;
+
+    const loadingEl = document.getElementById('loading');
+    const errorEl = document.getElementById('error');
+    const errorMsg = document.getElementById('error-msg');
+    const uiEl = document.getElementById('ui');
+    const controlsEl = document.getElementById('controls');
+
+    function showError(msg) {
+      loadingEl.classList.add('hidden');
+      errorEl.style.display = 'block';
+      errorMsg.textContent = msg;
+    }
+
+    // Check WebGPU
+    if (!navigator.gpu) {
+      showError('WebGPU not supported. Please use Chrome 113+ or Edge 113+');
+      throw new Error('WebGPU not supported');
+    }
+
+    // ============================================
+    // Initialize WebGPU (Native)
+    // ============================================
+    const canvas = document.getElementById('canvas');
+    let device, context, format;
+
+    try {
+      const gpu = await initGPU(canvas);
+      device = gpu.device;
+      context = gpu.context;
+      format = gpu.format;
+    } catch (e) {
+      showError('Failed to initialize WebGPU: ' + e.message);
+      throw e;
+    }
+
+    // ============================================
+    // Create Uniform Buffers (Native WebGPU)
+    // ============================================
+    const buffers = createUniformBuffers(device);
+    const cameraBuffer = buffers.camera;
+    const terrainBuffer = buffers.terrain;
+    const oceanBuffer = buffers.ocean;
+    const characterBuffer = buffers.character;
+    const underwaterBuffer = buffers.underwater;
+
+    // ============================================
+    // TEXTURE LOADING CONFIGURATION
+    // Using CONFIG.textures for all texture URLs
+    // ============================================
+
+    // Load terrain textures - can use procedural or image textures
+    let grassTexture;
+    let grassNormalTexture;
+    if (CONFIG.textures.useImageGrass) {
+      try {
+        grassTexture = await loadTexture(device, CONFIG.textures.grass);
+        console.log('✅ Loaded grass texture from image:', CONFIG.textures.grass);
+      } catch (e) {
+        console.warn('⚠️ Could not load grass image, falling back to procedural:', e.message);
+        grassTexture = createGrassTexture(device);
+      }
+      try {
+        grassNormalTexture = await loadTexture(device, CONFIG.textures.grassNormal);
+        console.log('✅ Loaded grass normal texture from image:', CONFIG.textures.grassNormal);
+      } catch (e) {
+        console.warn('⚠️ Could not load grass normal image:', e.message);
+        grassNormalTexture = null;
+      }
+    } else {
+      grassTexture = createGrassTexture(device);
+      grassNormalTexture = null;
+    }
+    
+    // Create a flat normal texture as fallback for grass if normal map failed to load
+    if (!grassNormalTexture) {
+      grassNormalTexture = createFlatNormalTexture(device);
+    }
+    
+    // Sand texture from local file
+    let sandTexture;
+    if (CONFIG.textures.useImageSand) {
+      try {
+        sandTexture = await loadTexture(device, CONFIG.textures.sand);
+        console.log('✅ Loaded sand texture from image:', CONFIG.textures.sand);
+      } catch (e) {
+        console.warn('⚠️ Could not load sand image, falling back to procedural:', e.message);
+        sandTexture = createSandTexture(device);
+      }
+    } else {
+      sandTexture = createSandTexture(device);
+    }
+    
+    // Rock texture from local files
+    let rockTexture;
+    let rockNormalTexture;
+    if (CONFIG.textures.useImageRock) {
+      try {
+        rockTexture = await loadTexture(device, CONFIG.textures.rock);
+        console.log('✅ Loaded rock texture from image:', CONFIG.textures.rock);
+      } catch (e) {
+        console.warn('⚠️ Could not load rock image, falling back to procedural:', e.message);
+        rockTexture = createRockTexture(device);
+      }
+      try {
+        rockNormalTexture = await loadTexture(device, CONFIG.textures.rockNormal);
+        console.log('✅ Loaded rock normal texture from image:', CONFIG.textures.rockNormal);
+      } catch (e) {
+        console.warn('⚠️ Could not load rock normal image:', e.message);
+        rockNormalTexture = null;
+      }
+    } else {
+      rockTexture = createRockTexture(device);
+      rockNormalTexture = null;
+    }
+    
+    // Create a flat normal texture as fallback if normal map failed to load
+    if (!rockNormalTexture) {
+      rockNormalTexture = createFlatNormalTexture(device);
+    }
+    
+    // Snow texture from local file
+    let snowTexture;
+    if (CONFIG.textures.useImageSnow) {
+      try {
+        snowTexture = await loadTexture(device, CONFIG.textures.snow);
+        console.log('✅ Loaded snow texture from image:', CONFIG.textures.snow);
+      } catch (e) {
+        console.warn('⚠️ Could not load snow image, falling back to procedural:', e.message);
+        snowTexture = createSnowTexture(device);
+      }
+    } else {
+      snowTexture = createSnowTexture(device);
+    }
+
+    // Water bump/normal texture for realistic water surface
+    let waterBumpTexture;
+    try {
+      waterBumpTexture = await loadTexture(device, CONFIG.textures.waterBump);
+      console.log('✅ Loaded water bump texture from image:', CONFIG.textures.waterBump);
+    } catch (e) {
+      console.warn('⚠️ Could not load water bump image, creating flat normal:', e.message);
+      waterBumpTexture = createFlatNormalTexture(device);
+    }
+
+    // Create sampler for water bump (needs repeat mode)
+    const textureSampler = device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      mipmapFilter: 'linear',
+      addressModeU: 'repeat',
+      addressModeV: 'repeat',
+      // Note: No anisotropic filtering - textures don't have mipmaps generated
+    });
+
+    // ============================================
+    // GLB/glTF Loader for WebGPU with Skeletal Animation
+    // (Functions imported from lib/avatar/)
+    // ============================================
+
+    // [GLB functions removed - now imported from lib/avatar/]
+    // loadGLB, loadTextureFromGLB, extractMeshData, extractSkeleton
+    // extractSkinningData, extractAnimations, createCharacterBuffers
+    // AnimationSystem class, and quaternion utilities
+
+    // Animation system instance
+    let animationSystem = null;
+    let boneMatricesBuffer = null;
+    const MAX_BONES = CONFIG.animation.maxBones;
+
+    // Load avatar and animations
+    let avatarVB = null, avatarIB = null, avatarIndexCount = 0;
+    let avatarLoaded = false;
+    let avatarTexture = null;
+    let avatarSampler = null;
+
+    (async () => {
+      try {
+        console.log('Loading avatar from Ready Player Me...');
+        const avatarGlb = await loadGLB(AVATAR_URL);
+        const meshData = extractMeshData(avatarGlb.json, avatarGlb.bin);
+
+        // Extract skeleton from avatar
+        const skeleton = extractSkeleton(avatarGlb.json, avatarGlb.bin);
+        const skinningData = extractSkinningData(avatarGlb.json, avatarGlb.bin);
+
+        console.log('Loading animations...');
+        const animGlb = await loadGLB(CONFIG.assets.animations);
+        const animations = extractAnimations(animGlb.json, animGlb.bin);
+
+        // Create animation system with retargeting
+        if (skeleton) {
+          // Animation GLB may have different bone names, create mapping
+          const animSkeleton = extractSkeleton(animGlb.json, animGlb.bin);
+
+          // Create a merged animation system
+          // Use avatar skeleton structure but with animation data retargeted
+          if (animSkeleton) {
+            console.log('Avatar bones:', skeleton.joints.length);
+            console.log('Animation bones:', animSkeleton.joints.length);
+
+            // Create bone name mapping for retargeting
+            // Common mappings between different naming conventions
+            const boneMapping = {};
+            for (const avatarBone of skeleton.joints) {
+              // Try exact match first
+              if (animSkeleton.joints.includes(avatarBone)) {
+                boneMapping[avatarBone] = avatarBone;
+              } else {
+                // Try to find similar bone names between avatar and animation
+                const avatarNormalized = avatarBone.toLowerCase().replace(/[_.\s]/g, '');
+                for (const animBone of animSkeleton.joints) {
+                  const animNormalized = animBone.toLowerCase().replace(/[_.\s]/g, '');
+                  if (avatarNormalized === animNormalized ||
+                    avatarNormalized.includes(animNormalized) ||
+                    animNormalized.includes(avatarNormalized)) {
+                    boneMapping[animBone] = avatarBone;
+                    break;
+                  }
+                }
+              }
+            }
+
+            console.log('Bone mapping:', Object.keys(boneMapping).length, 'mapped');
+
+            // Retarget animations to use avatar bone names
+            const retargetedAnims = {};
+            for (const [name, anim] of Object.entries(animations)) {
+              retargetedAnims[name] = {
+                ...anim,
+                tracks: anim.tracks.map(track => ({
+                  ...track,
+                  nodeName: boneMapping[track.nodeName] || track.nodeName
+                }))
+              };
+            }
+
+            animationSystem = new AnimationSystem(skeleton, retargetedAnims);
+
+            // Create bone matrices buffer
+            boneMatricesBuffer = device.createBuffer({
+              size: MAX_BONES * 16 * 4, // MAX_BONES * mat4 * sizeof(float)
+              usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+            });
+
+            // Start with Idle animation
+            if (retargetedAnims['Idle']) {
+              animationSystem.play('Idle');
+            } else {
+              // Play first available animation
+              const firstAnim = Object.keys(retargetedAnims)[0];
+              if (firstAnim) animationSystem.play(firstAnim);
+            }
+
+            console.log('✅ Animation system initialized!');
+          }
+        }
+
+        const buffers = createCharacterBuffers(meshData, skinningData);
+
+        avatarVB = device.createBuffer({
+          size: buffers.vertices.byteLength,
+          usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(avatarVB, 0, buffers.vertices);
+
+        avatarIB = device.createBuffer({
+          size: buffers.indices.byteLength,
+          usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+        });
+        device.queue.writeBuffer(avatarIB, 0, buffers.indices);
+
+        // Load textures from GLB
+        // Ready Player Me models typically have textures in the first material
+        const textureIndices = new Set();
+        for (const mesh of meshData) {
+          if (mesh.baseColorTextureIndex !== null) {
+            textureIndices.add(mesh.baseColorTextureIndex);
+          }
+        }
+
+        console.log('Found textures:', [...textureIndices]);
+
+        // Load the first texture found (usually the main atlas)
+        for (const texIdx of textureIndices) {
+          const tex = await loadTextureFromGLB(avatarGlb.json, avatarGlb.bin, texIdx, device);
+          if (tex) {
+            avatarTexture = tex;
+            console.log('✅ Avatar texture loaded!');
+            break;
+          }
+        }
+
+        // Create a default white texture if no texture found
+        if (!avatarTexture) {
+          console.log('No texture found, creating default');
+          avatarTexture = device.createTexture({
+            size: [1, 1, 1],
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+          });
+          device.queue.writeTexture(
+            { texture: avatarTexture },
+            new Uint8Array([255, 255, 255, 255]),
+            { bytesPerRow: 4 },
+            [1, 1, 1]
+          );
+        }
+
+        avatarSampler = device.createSampler({
+          magFilter: 'linear',
+          minFilter: 'linear',
+          mipmapFilter: 'linear',
+        });
+
+        avatarIndexCount = buffers.indices.length;
+        avatarLoaded = true;
+
+        // Debug: show bounds
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+        let minZ = Infinity, maxZ = -Infinity;
+        for (let i = 0; i < buffers.vertices.length; i += 8) {
+          minX = Math.min(minX, buffers.vertices[i]);
+          maxX = Math.max(maxX, buffers.vertices[i]);
+          minY = Math.min(minY, buffers.vertices[i + 1]);
+          maxY = Math.max(maxY, buffers.vertices[i + 1]);
+          minZ = Math.min(minZ, buffers.vertices[i + 2]);
+          maxZ = Math.max(maxZ, buffers.vertices[i + 2]);
+        }
+        console.log('✅ Avatar loaded!', avatarIndexCount, 'indices');
+        console.log(`Avatar bounds: X[${minX.toFixed(2)}, ${maxX.toFixed(2)}] Y[${minY.toFixed(2)}, ${maxY.toFixed(2)}] Z[${minZ.toFixed(2)}, ${maxZ.toFixed(2)}]`);
+      } catch (e) {
+        console.error('Failed to load avatar:', e);
+      }
+    })();
+
+    // ============================================
+    // Geometry Generation (using lib/geometry.js)
+    // ============================================
+    // Create geometry - large enough to reach horizon
+    const terrain = createPlaneGeometry(CONFIG.geometry.terrain.size, CONFIG.geometry.terrain.segments);
+    const ocean = createPlaneGeometry(CONFIG.geometry.ocean.size, CONFIG.geometry.ocean.segments);
+
+    // Create GPU buffers using helper
+    const terrainBuffers = createGeometryBuffers(device, terrain);
+    const terrainVB = terrainBuffers.vertexBuffer;
+    const terrainIB = terrainBuffers.indexBuffer;
+
+    const oceanBuffers = createGeometryBuffers(device, ocean);
+    const oceanVB = oceanBuffers.vertexBuffer;
+    const oceanIB = oceanBuffers.indexBuffer;
+
+    // ============================================
+    // WGSL Shaders
+    // ============================================
+
+    // Sky Shader - Full sky dome with proper ray direction
+    // ============================================
+    // Shadow Map Configuration
+    // ============================================
+    const SHADOW_MAP_SIZE = CONFIG.shadows.mapSize;
+
+    // Create shadow map depth texture
+    const shadowMapTexture = device.createTexture({
+      size: [SHADOW_MAP_SIZE, SHADOW_MAP_SIZE],
+      format: 'depth32float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    const shadowMapSampler = device.createSampler({
+      compare: 'less',
+      magFilter: 'linear',
+      minFilter: 'linear',
+    });
+
+    // Day/Night cycle configuration
+    const DAY_CYCLE_DURATION = CONFIG.dayNight.cycleDuration;
+
+    // [getLightDirection moved to lib/lighting.js]
+    // getLightDirection is imported from lib/index.js
+
+    // Initial light direction (will be updated each frame)
+    let sunDirNorm = getLightDirection(0, DAY_CYCLE_DURATION).direction;
+    let lightInfo = getLightDirection(0, DAY_CYCLE_DURATION);
+
+    // [Shadow shaders moved to lib/shaders/shadow.wgsl.js]
+    // shadowTerrainShader, shadowCharacterShader are imported from lib/index.js
+
+    // [Sky shader moved to lib/shaders/sky.wgsl.js]
+    // skyShader is imported from lib/index.js
+    // (~1465 lines of inline WGSL code removed)
+
+    // terrainShader is now imported from lib/shaders/terrain.wgsl.js
+    // (Removed ~760 lines of inline WGSL code)
+
+    // [Ocean shader moved to lib/shaders/oceanShader.wgsl.js]
+    // oceanShader is imported from lib/index.js
+    // (~1062 lines of inline WGSL code removed)
+
+    // [Effects shaders moved to lib/shaders/effects.wgsl.js]
+    // underwaterShader, godRaysShader, bubblesShader, rainShader, lightningShader, snowShader
+    // are imported from lib/index.js
+
+    // [Character shader moved to lib/shaders/character.wgsl.js]
+    // characterShader is imported from lib/index.js
+
+    // [Compute shader moved to lib/shaders/compute.wgsl.js]
+    // terrainHeightComputeShader is imported from lib/index.js
+
+    // ============================================
+    // Create Pipelines
+    // ============================================
+    const cameraLayout = device.createBindGroupLayout({
+      entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }],
+    });
+
+    // Light buffer for shadow mapping (Native WebGPU)
+    const lightBuffer = device.createBuffer({
+      size: LIGHT_UNIFORMS_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Shadow pipeline layouts
+    const shadowTerrainLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+      ],
+    });
+
+    const shadowCharacterLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+      ],
+    });
+
+    // Terrain layout with textures and shadows
+    const terrainLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 6, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 7, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 8, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+        { binding: 9, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
+        { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Rock normal map
+        { binding: 11, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Grass normal map
+      ],
+    });
+
+    const meshLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    });
+
+    // Ocean layout
+    const oceanLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Water bump texture
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },    // Water sampler
+      ],
+    });
+
+    // Character layout with texture, bone matrices, and shadows
+    const characterLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+        { binding: 4, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
+        { binding: 5, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 6, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'depth' } },
+        { binding: 7, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
+      ],
+    });
+
+    const vertexLayout = {
+      arrayStride: 20,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x3' },
+        { shaderLocation: 1, offset: 12, format: 'float32x2' },
+      ],
+    };
+
+    // Character vertex layout (pos, normal, uv, joints, weights = 16 floats = 64 bytes)
+    const characterVertexLayout = {
+      arrayStride: 64,
+      attributes: [
+        { shaderLocation: 0, offset: 0, format: 'float32x3' },   // position
+        { shaderLocation: 1, offset: 12, format: 'float32x3' },  // normal
+        { shaderLocation: 2, offset: 24, format: 'float32x2' },  // uv
+        { shaderLocation: 3, offset: 32, format: 'float32x4' },  // joints
+        { shaderLocation: 4, offset: 48, format: 'float32x4' },  // weights
+      ],
+    };
+
+    // Sky pipeline
+    const skyModule = device.createShaderModule({ code: skyShader });
+    const skyPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [cameraLayout] }),
+      vertex: { module: skyModule, entryPoint: 'vs' },
+      fragment: { module: skyModule, entryPoint: 'fs', targets: [{ format }] },
+      primitive: { topology: 'triangle-list' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'less-equal' },
+    });
+
+    // Shadow pipelines (depth-only)
+    const shadowTerrainModule = device.createShaderModule({ code: shadowTerrainShader });
+    const shadowTerrainPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [shadowTerrainLayout] }),
+      vertex: { module: shadowTerrainModule, entryPoint: 'vs', buffers: [vertexLayout] },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less', depthBias: 4, depthBiasSlopeScale: 4 },
+    });
+
+    const shadowCharacterModule = device.createShaderModule({ code: shadowCharacterShader });
+    const shadowCharacterPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [shadowCharacterLayout] }),
+      vertex: { module: shadowCharacterModule, entryPoint: 'vs', buffers: [characterVertexLayout] },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less', depthBias: 4, depthBiasSlopeScale: 4 },
+    });
+
+    // Terrain pipeline with textures
+    const terrainModule = device.createShaderModule({ code: terrainShader });
+    const terrainPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [terrainLayout] }),
+      vertex: { module: terrainModule, entryPoint: 'vs', buffers: [vertexLayout] },
+      fragment: { module: terrainModule, entryPoint: 'fs', targets: [{ format }] },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' },
+    });
+
+    // Ocean pipeline
+    const oceanModule = device.createShaderModule({ code: oceanShader });
+    const oceanPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [oceanLayout] }),
+      vertex: { module: oceanModule, entryPoint: 'vs', buffers: [vertexLayout] },
+      fragment: {
+        module: oceanModule, entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },  // 'none' to see ocean from below
+      depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'less' },
+    });
+
+    // Character pipeline
+    const characterModule = device.createShaderModule({ code: characterShader });
+    const characterPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [characterLayout] }),
+      vertex: { module: characterModule, entryPoint: 'vs', buffers: [characterVertexLayout] },
+      fragment: {
+        module: characterModule,
+        entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'back' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: true, depthCompare: 'less' },
+    });
+
+    // Underwater effect layout
+    const underwaterLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
+        { binding: 2, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      ],
+    });
+
+    // Underwater pipeline - for post-processing effect
+    const underwaterModule = device.createShaderModule({ code: underwaterShader });
+    const underwaterPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [underwaterLayout] }),
+      vertex: { module: underwaterModule, entryPoint: 'vs' },
+      fragment: { module: underwaterModule, entryPoint: 'fs', targets: [{ format }] },
+      primitive: { topology: 'triangle-list' },
+    });
+
+
+    // ============================================
+    // Terrain Height Compute Pipeline (GPU physics)
+    // ============================================
+    const terrainHeightComputeModule = device.createShaderModule({ code: terrainHeightComputeShader });
+
+    const terrainHeightComputeLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+      ],
+    });
+
+    const terrainHeightComputePipeline = device.createComputePipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [terrainHeightComputeLayout] }),
+      compute: { module: terrainHeightComputeModule, entryPoint: 'main' },
+    });
+
+    // Buffers for terrain height compute
+    const terrainHeightInputBuffer = device.createBuffer({
+      size: 8, // 2 floats (posX, posZ)
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const terrainHeightOutputBuffer = device.createBuffer({
+      size: 4, // 1 float (height)
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+    });
+
+    const terrainHeightReadBuffer = device.createBuffer({
+      size: 4,
+      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+    });
+
+    const terrainHeightBindGroup = device.createBindGroup({
+      layout: terrainHeightComputeLayout,
+      entries: [
+        { binding: 0, resource: { buffer: terrainHeightInputBuffer } },
+        { binding: 1, resource: { buffer: terrainHeightOutputBuffer } },
+      ],
+    });
+
+    // Variable to store the GPU-computed terrain height
+    let gpuTerrainHeight = 0;
+    let gpuTerrainHeightPending = false;
+
+    // ============================================
+    // Volumetric God Rays Pipeline (3D light shafts)
+    // ============================================
+    const godRaysModule = device.createShaderModule({ code: godRaysShader });
+
+    const godRaysLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    });
+
+    const godRaysPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [godRaysLayout] }),
+      vertex: { module: godRaysModule, entryPoint: 'vs', buffers: [] },
+      fragment: {
+        module: godRaysModule,
+        entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one' }, // Additive blending
+            alpha: { srcFactor: 'one', dstFactor: 'one' },
+          },
+        }]
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'less' },
+    });
+
+    // God rays uniform buffer (Native WebGPU)
+    const godRaysBuffer = device.createBuffer({
+      size: GOD_RAYS_UNIFORMS_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const godRaysBG = device.createBindGroup({
+      layout: godRaysLayout,
+      entries: [
+        { binding: 0, resource: { buffer: cameraBuffer } },
+        { binding: 1, resource: { buffer: godRaysBuffer } },
+      ],
+    });
+
+    // God rays configuration (from CONFIG)
+    const GOD_RAYS_CONFIG = CONFIG.godRays;
+
+    // ============================================
+    // BUBBLES PIPELINE - Underwater bubble particles
+    // ============================================
+    const bubblesModule = device.createShaderModule({ code: bubblesShader });
+
+    const bubblesLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    });
+
+    const bubblesPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [bubblesLayout] }),
+      vertex: { module: bubblesModule, entryPoint: 'vs', buffers: [] },
+      fragment: {
+        module: bubblesModule,
+        entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha' }, // Alpha blending for translucent bubbles
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+          },
+        }]
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'less' },
+    });
+
+    // Bubbles uniform buffer (Native WebGPU)
+    const bubblesBuffer = device.createBuffer({
+      size: BUBBLES_UNIFORMS_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    const bubblesBG = device.createBindGroup({
+      layout: bubblesLayout,
+      entries: [
+        { binding: 0, resource: { buffer: cameraBuffer } },
+        { binding: 1, resource: { buffer: bubblesBuffer } },
+      ],
+    });
+
+    // Bubbles configuration (from CONFIG)
+    const BUBBLES_CONFIG = CONFIG.bubbles;
+
+    // ============================================
+    // WEATHER SYSTEM - Pipelines, Buffers, State
+    // ============================================
+
+    // Weather state: 0=clear, 1=clouds+, 2=clouds-, 3=light rain, 4=heavy rain, 5=thunderstorm, 6=snow
+    let currentWeather = 0;
+    let weatherIntensity = 0.0;  // Interpolates to target
+    let weatherIntensityTarget = 0.0;
+    let skyDarkening = 0.0;
+    let skyDarkeningTarget = 0.0;
+    let lightningFlash = 0.0;  // Current flash intensity
+
+    // Lightning position - where in the sky the lightning appears
+    let lightningPosX = 0;           // Direction X (-1 to 1)
+    let lightningPosY = 0.3;         // Height in sky (0.1 to 0.6)
+
+    // Lightning bolt state (used for rendering)
+    let nextLightningTime = 0;
+    let lightningActive = false;
+    let lightningStartTime = 0;
+    let lightningX = 0;
+    let lightningZ = 0;
+    let lightningSeed = 0;
+
+    // Rain buffer (Native WebGPU)
+    const rainBuffer = device.createBuffer({
+      size: RAIN_UNIFORMS_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Rain pipeline
+    const rainModule = device.createShaderModule({ code: rainShader });
+    const rainLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    });
+    const rainPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [rainLayout] }),
+      vertex: { module: rainModule, entryPoint: 'vs', buffers: [] },
+      fragment: {
+        module: rainModule, entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'less' },
+    });
+
+    const rainBG = device.createBindGroup({
+      layout: rainLayout,
+      entries: [
+        { binding: 0, resource: { buffer: cameraBuffer } },
+        { binding: 1, resource: { buffer: rainBuffer } },
+      ],
+    });
+
+    // Lightning buffer (Native WebGPU)
+    const lightningBuffer = device.createBuffer({
+      size: LIGHTNING_UNIFORMS_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Lightning pipeline
+    const lightningModule = device.createShaderModule({ code: lightningShader });
+    const lightningLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    });
+    const lightningPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [lightningLayout] }),
+      vertex: { module: lightningModule, entryPoint: 'vs', buffers: [] },
+      fragment: {
+        module: lightningModule, entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one', operation: 'add' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'less' },
+    });
+
+    const lightningBG = device.createBindGroup({
+      layout: lightningLayout,
+      entries: [
+        { binding: 0, resource: { buffer: cameraBuffer } },
+        { binding: 1, resource: { buffer: lightningBuffer } },
+      ],
+    });
+
+    // Snow buffer (Native WebGPU)
+    const snowBuffer = device.createBuffer({
+      size: SNOW_UNIFORMS_SIZE,
+      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+    });
+
+    // Snow pipeline
+    const snowModule = device.createShaderModule({ code: snowShader });
+    const snowLayout = device.createBindGroupLayout({
+      entries: [
+        { binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      ],
+    });
+    const snowPipeline = device.createRenderPipeline({
+      layout: device.createPipelineLayout({ bindGroupLayouts: [snowLayout] }),
+      vertex: { module: snowModule, entryPoint: 'vs', buffers: [] },
+      fragment: {
+        module: snowModule, entryPoint: 'fs',
+        targets: [{
+          format,
+          blend: {
+            color: { srcFactor: 'src-alpha', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+            alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha', operation: 'add' },
+          },
+        }],
+      },
+      primitive: { topology: 'triangle-list', cullMode: 'none' },
+      depthStencil: { format: 'depth32float', depthWriteEnabled: false, depthCompare: 'less' },
+    });
+
+    const snowBG = device.createBindGroup({
+      layout: snowLayout,
+      entries: [
+        { binding: 0, resource: { buffer: cameraBuffer } },
+        { binding: 1, resource: { buffer: snowBuffer } },
+      ],
+    });
+
+    // Weather sounds (URLs from CONFIG)
+    const weatherSounds = {
+      rain: new Audio(CONFIG.audio.sounds.rain),
+      thunder: new Audio(CONFIG.audio.sounds.thunder),
+    };
+    weatherSounds.rain.loop = true;
+    weatherSounds.rain.volume = CONFIG.weather.rain.baseVolume;
+    weatherSounds.thunder.volume = CONFIG.weather.lightning.thunderVolume;
+
+    let currentWeatherSound = null;
+
+    // Weather change function
+    function setWeather(weatherType) {
+      const wc = CONFIG.weather;
+
+      // Stop current weather sound
+      if (currentWeatherSound) {
+        currentWeatherSound.pause();
+        currentWeatherSound.currentTime = 0;
+        currentWeatherSound = null;
+      }
+
+      currentWeather = weatherType;
+
+      const ws = CONFIG.weather.states;
+      switch (weatherType) {
+        case 0: // Clear
+          weatherIntensityTarget = ws.clear.intensity;
+          skyDarkeningTarget = 0.0;
+          cloudCoverageTarget = ws.clear.cloudCoverage;
+          console.log('☀️ Weather: Clear');
+          break;
+        case 3: // Light Rain
+          weatherIntensityTarget = ws.lightRain.intensity;
+          skyDarkeningTarget = wc.skyDarkening.lightRain;
+          cloudCoverageTarget = ws.lightRain.cloudCoverage;
+          weatherSounds.rain.volume = ws.lightRain.rainVolume;
+          currentWeatherSound = weatherSounds.rain;
+          currentWeatherSound.play().catch(() => { });
+          console.log('🌧️ Weather: Light Rain');
+          break;
+        case 4: // Heavy Rain
+          weatherIntensityTarget = ws.heavyRain.intensity;
+          skyDarkeningTarget = wc.skyDarkening.heavyRain;
+          cloudCoverageTarget = ws.heavyRain.cloudCoverage;
+          weatherSounds.rain.volume = ws.heavyRain.rainVolume;
+          currentWeatherSound = weatherSounds.rain;
+          currentWeatherSound.play().catch(() => { });
+          console.log('🌧️ Weather: Heavy Rain');
+          break;
+        case 5: // Thunderstorm
+          weatherIntensityTarget = ws.storm.intensity;
+          skyDarkeningTarget = wc.skyDarkening.storm;
+          cloudCoverageTarget = ws.storm.cloudCoverage;
+          weatherSounds.rain.volume = ws.storm.rainVolume;
+          currentWeatherSound = weatherSounds.rain;
+          currentWeatherSound.play().catch(() => { });
+          // Flag to delay first lightning strike (handled in render loop)
+          nextLightningTime = Infinity;  // Will be reset properly in render loop
+          lightningFlash = 0;  // Ensure no flash on transition
+          lightningActive = false;
+          console.log('⛈️ Weather: Thunderstorm');
+          break;
+        case 6: // Snow
+          weatherIntensityTarget = ws.snow.intensity;
+          skyDarkeningTarget = ws.snow.skyDarkening;
+          cloudCoverageTarget = ws.snow.cloudCoverage;
+          console.log('❄️ Weather: Snow');
+          break;
+      }
+    }
+
+    // Create render target texture for scene (to be used by underwater effect)
+    let sceneTexture = device.createTexture({
+      size: [canvas.width, canvas.height],
+      format,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+    });
+
+    const sceneSampler = device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+    });
+
+
+
+    // ============================================
+    // Bind Groups (Native WebGPU)
+    // ============================================
+    const skyBG = device.createBindGroup({
+      layout: cameraLayout,
+      entries: [{ binding: 0, resource: { buffer: cameraBuffer } }],
+    });
+
+    // Shadow bind groups
+    const shadowTerrainBG = device.createBindGroup({
+      layout: shadowTerrainLayout,
+      entries: [
+        { binding: 0, resource: { buffer: lightBuffer } },
+      ],
+    });
+
+    const terrainBG = device.createBindGroup({
+      layout: terrainLayout,
+      entries: [
+        { binding: 0, resource: { buffer: cameraBuffer } },
+        { binding: 1, resource: { buffer: terrainBuffer } },
+        { binding: 2, resource: grassTexture.createView() },
+        { binding: 3, resource: sandTexture.createView() },
+        { binding: 4, resource: rockTexture.createView() },
+        { binding: 5, resource: snowTexture.createView() },
+        { binding: 6, resource: textureSampler },
+        { binding: 7, resource: { buffer: lightBuffer } },
+        { binding: 8, resource: shadowMapTexture.createView() },
+        { binding: 9, resource: shadowMapSampler },
+        { binding: 10, resource: rockNormalTexture.createView() },
+        { binding: 11, resource: grassNormalTexture.createView() },
+      ],
+    });
+
+    // Ocean bind group (created dynamically in render loop)
+    let oceanBG = null;
+
+    // Shadow character bind group will be created after buffers are ready
+    let shadowCharacterBG = null;
+
+    // Create default bone matrices buffer (identity matrices)
+    // This will be replaced when animations are loaded
+    if (!boneMatricesBuffer) {
+      boneMatricesBuffer = device.createBuffer({
+        size: MAX_BONES * 16 * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      });
+      // Initialize with identity matrices
+      const identityMatrices = new Float32Array(MAX_BONES * 16);
+      for (let i = 0; i < MAX_BONES; i++) {
+        identityMatrices[i * 16 + 0] = 1;  // [0][0]
+        identityMatrices[i * 16 + 5] = 1;  // [1][1]
+        identityMatrices[i * 16 + 10] = 1; // [2][2]
+        identityMatrices[i * 16 + 15] = 1; // [3][3]
+      }
+      device.queue.writeBuffer(boneMatricesBuffer, 0, identityMatrices);
+    }
+
+    // Character bind group will be created after texture loads
+    let characterBG = null;
+
+    // ============================================
+    // Depth Texture (readable for underwater effect)
+    // ============================================
+    let depthTexture = device.createTexture({
+      size: [canvas.width, canvas.height],
+      format: 'depth32float',
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+    });
+
+    // ============================================
+    // Camera & Controls - Third Person
+    // ============================================
+    // Character position (the actual player)
+    // Load saved state from localStorage or use defaults
+    const savedPosition = localStorage.getItem('ovgrid_avatar_position');
+    const savedRotation = localStorage.getItem('ovgrid_avatar_rotation');
+    let charPos = savedPosition
+      ? JSON.parse(savedPosition)
+      : { ...CONFIG.character.spawnPosition };
+
+    let charRotation = savedRotation ? parseFloat(savedRotation) : 0;  // Character facing direction (yaw)
+    let charTargetRotation = charRotation;  // Target rotation for smooth interpolation
+    const rotationSmoothing = CONFIG.movement.rotationSmoothing;
+
+    // Camera orbit around character
+    // Load saved camera state from localStorage or use defaults
+    const savedCamera = localStorage.getItem('ovgrid_camera_state');
+    const cameraState = savedCamera ? JSON.parse(savedCamera) : null;
+    let camYaw = cameraState?.yaw ?? 0;
+    let camPitch = cameraState?.pitch ?? CONFIG.camera.defaultPitch;
+    let camDistance = cameraState?.distance ?? CONFIG.camera.distance;
+    const camDistanceMin = CONFIG.camera.minDistance;
+    const camDistanceMax = CONFIG.camera.maxDistance;
+    const camHeightOffset = CONFIG.camera.height;
+    const zoomSpeed = CONFIG.camera.zoomSpeed;
+
+    // Save all state periodically (every 2 seconds)
+    setInterval(() => {
+      localStorage.setItem('ovgrid_avatar_position', JSON.stringify(charPos));
+      localStorage.setItem('ovgrid_avatar_rotation', charRotation.toString());
+      localStorage.setItem('ovgrid_camera_state', JSON.stringify({
+        yaw: camYaw,
+        pitch: camPitch,
+        distance: camDistance
+      }));
+    }, 2000);
+
+    // Save all state on page unload
+    window.addEventListener('beforeunload', () => {
+      localStorage.setItem('ovgrid_avatar_position', JSON.stringify(charPos));
+      localStorage.setItem('ovgrid_avatar_rotation', charRotation.toString());
+      localStorage.setItem('ovgrid_camera_state', JSON.stringify({
+        yaw: camYaw,
+        pitch: camPitch,
+        distance: camDistance
+      }));
+    });
+
+    let velocityY = 0;
+    // Swimming velocity for inertia
+    let swimVelX = 0, swimVelY = 0, swimVelZ = 0;
+    const gravity = -CONFIG.movement.gravity;
+    const jumpForce = CONFIG.movement.jumpVelocity * 2;  // Adjusted for feel
+    let isGrounded = false;
+    const keys = {};
+    const baseSpeed = CONFIG.movement.baseSpeed;
+    const sprintMultiplier = CONFIG.movement.sprintMultiplier;
+    const flyRiseSpeed = CONFIG.movement.flyRiseSpeed;     // Vertical rise speed
+    const flySlowSpeed = CONFIG.movement.flySlowSpeed;     // Slow flying horizontal
+    const flyFastSpeed = CONFIG.movement.flyFastSpeed;     // Fast flying horizontal
+    const flyMaxHeight = CONFIG.movement.flyMaxHeight;     // Max height limit
+    const lookSpeed = CONFIG.camera.mouseSensitivity;
+    let isDragging = false;
+
+    // ============================================
+    // Sound System (URLs from CONFIG)
+    // ============================================
+    const sounds = {
+      footstepsLand: new Audio(CONFIG.audio.sounds.footstepsLand),
+      footstepsWater: new Audio(CONFIG.audio.sounds.footstepsWater),
+      jump: new Audio(CONFIG.audio.sounds.jump),
+      fly: new Audio(CONFIG.audio.sounds.fly),
+    };
+
+    // Configure looping sounds
+    sounds.footstepsLand.loop = true;
+    sounds.footstepsWater.loop = true;
+    sounds.fly.loop = true;
+
+    // Set volumes from CONFIG
+    sounds.footstepsLand.volume = CONFIG.audio.footstepsLandVolume;
+    sounds.footstepsWater.volume = CONFIG.audio.footstepsWaterVolume;
+    sounds.jump.volume = CONFIG.audio.jumpVolume;
+    sounds.fly.volume = CONFIG.audio.flyVolume;
+
+    // Playback rate configuration from CONFIG
+    const soundConfig = {
+      walkRate: CONFIG.audio.walkRate,
+      runRate: CONFIG.audio.runRate,
+    };
+
+    // Track current movement state for sounds
+    let currentSoundState = 'idle';
+    let currentInWater = false;
+    let currentFootstepsSound = null;
+
+    const updateMovementSounds = (isMoving, isSprinting, isFlying, isJumping, inWater) => {
+      let targetState = 'idle';
+
+      if (isFlying) {
+        targetState = 'fly';
+      } else if (isJumping) {
+        targetState = 'jump';
+      } else if (isMoving) {
+        targetState = isSprinting ? 'run' : 'walk';
+      }
+
+      // Determine which footsteps sound to use
+      const targetFootsteps = inWater ? sounds.footstepsWater : sounds.footstepsLand;
+      const targetRate = isSprinting ? soundConfig.runRate : soundConfig.walkRate;
+
+      // Check if we need to switch footsteps sound (water vs land)
+      const needsSoundSwitch = (targetState === 'walk' || targetState === 'run') &&
+        (currentFootstepsSound !== targetFootsteps || currentSoundState === 'idle' || currentSoundState === 'fly' || currentSoundState === 'jump');
+
+      // Update playback rate for current footsteps if just changing speed
+      if ((targetState === 'walk' || targetState === 'run') && currentFootstepsSound === targetFootsteps && !needsSoundSwitch) {
+        currentFootstepsSound.playbackRate = targetRate;
+        currentSoundState = targetState;
+        return;
+      }
+
+      // Only change if state changed or sound source changed
+      if (targetState !== currentSoundState || needsSoundSwitch || inWater !== currentInWater) {
+        // Stop previous sounds
+        if (currentFootstepsSound) {
+          currentFootstepsSound.pause();
+          currentFootstepsSound.currentTime = 0;
+        }
+        if (currentSoundState === 'fly') {
+          sounds.fly.pause();
+          sounds.fly.currentTime = 0;
+        }
+
+        // Start new sound
+        if (targetState === 'walk' || targetState === 'run') {
+          currentFootstepsSound = targetFootsteps;
+          currentFootstepsSound.playbackRate = targetRate;
+          currentFootstepsSound.play().catch(() => { });
+        } else if (targetState === 'fly') {
+          sounds.fly.play().catch(() => { });
+          currentFootstepsSound = null;
+        } else if (targetState === 'jump') {
+          sounds.jump.currentTime = 0;
+          sounds.jump.play().catch(() => { });
+        } else {
+          currentFootstepsSound = null;
+        }
+
+        currentSoundState = targetState;
+        currentInWater = inWater;
+      }
+    };
+
+    // Cloud coverage control (0 = clear, 1 = full clouds)
+    let cloudCoverage = CONFIG.weather.states.clear.cloudCoverage;  // Current interpolated value
+    let cloudCoverageTarget = CONFIG.weather.states.clear.cloudCoverage;  // Target value (set by keys)
+
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      // Cloud coverage controls - set target, actual value interpolates smoothly
+      // Also reset weather to clear when manually adjusting clouds
+      if (e.code === 'Digit1') {
+        cloudCoverageTarget = Math.min(1.0, cloudCoverageTarget + 0.1);
+        skyDarkeningTarget = 0.0;  // Clear any storm darkening
+        weatherIntensityTarget = 0.0;  // Stop rain/snow
+        currentWeather = 0;  // Mark as clear weather
+        // Stop weather sounds
+        if (currentWeatherSound) {
+          currentWeatherSound.pause();
+          currentWeatherSound.currentTime = 0;
+          currentWeatherSound = null;
+        }
+        console.log(`☁️ Cloud coverage target: ${(cloudCoverageTarget * 100).toFixed(0)}%`);
+      }
+      if (e.code === 'Digit2') {
+        cloudCoverageTarget = Math.max(0.0, cloudCoverageTarget - 0.1);
+        skyDarkeningTarget = 0.0;  // Clear any storm darkening
+        weatherIntensityTarget = 0.0;  // Stop rain/snow
+        currentWeather = 0;  // Mark as clear weather
+        // Stop weather sounds
+        if (currentWeatherSound) {
+          currentWeatherSound.pause();
+          currentWeatherSound.currentTime = 0;
+          currentWeatherSound = null;
+        }
+        console.log(`☀️ Cloud coverage target: ${(cloudCoverageTarget * 100).toFixed(0)}%`);
+      }
+      // Weather controls
+      if (e.code === 'Digit3') {
+        setWeather(3);  // Light rain
+      }
+      if (e.code === 'Digit4') {
+        setWeather(4);  // Heavy rain
+      }
+      if (e.code === 'Digit5') {
+        setWeather(5);  // Thunderstorm
+      }
+      if (e.code === 'Digit6') {
+        setWeather(6);  // Snow
+      }
+      if (e.code === 'Digit0') {
+        setWeather(0);  // Clear weather
+      }
+    });
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    // Mouse drag to rotate camera (click and drag, not pointer lock)
+    canvas.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      canvas.style.cursor = 'grabbing';
+    });
+
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      canvas.style.cursor = 'grab';
+    });
+
+    canvas.addEventListener('mousemove', e => {
+      if (isDragging) {
+        camYaw -= e.movementX * lookSpeed;
+        camPitch = Math.max(CONFIG.camera.minPitch, Math.min(CONFIG.camera.maxPitch, camPitch - e.movementY * lookSpeed));
+      }
+    });
+
+    // Touch support for mobile
+    let lastTouchX = 0, lastTouchY = 0;
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        isDragging = true;
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (isDragging && e.touches.length === 1) {
+        const deltaX = e.touches[0].clientX - lastTouchX;
+        const deltaY = e.touches[0].clientY - lastTouchY;
+        camYaw -= deltaX * lookSpeed;
+        camPitch = Math.max(CONFIG.camera.minPitch, Math.min(CONFIG.camera.maxPitch, camPitch - deltaY * lookSpeed));
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    canvas.addEventListener('touchend', () => {
+      isDragging = false;
+    });
+
+    // Zoom with mouse wheel
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      camDistance += e.deltaY * 0.01 * zoomSpeed;
+      camDistance = Math.max(camDistanceMin, Math.min(camDistanceMax, camDistance));
+    }, { passive: false });
+
+    // Pinch to zoom (touch devices)
+    let lastPinchDistance = 0;
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastPinchDistance = Math.sqrt(dx * dx + dy * dy);
+      }
+    }, { passive: true });
+
+    canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const pinchDistance = Math.sqrt(dx * dx + dy * dy);
+        const delta = lastPinchDistance - pinchDistance;
+        camDistance += delta * 0.02 * zoomSpeed;
+        camDistance = Math.max(camDistanceMin, Math.min(camDistanceMax, camDistance));
+        lastPinchDistance = pinchDistance;
+        e.preventDefault();
+      }
+    }, { passive: false });
+
+    // Set initial cursor
+    canvas.style.cursor = 'grab';
+
+    // [Matrix math functions moved to lib/math.js]
+    // perspective, lookAt, mul, identity, rotateY, translate, scale
+    // are imported from lib/index.js
+
+    // ============================================
+    // Render Loop
+    // ============================================
+    let lastT = performance.now(), totalT = 0, frames = 0, fps = 0, fpsT = 0;
+
+    // Show UI
+    loadingEl.classList.add('hidden');
+    uiEl.classList.remove('hidden');
+    controlsEl.classList.remove('hidden');
+
+    function render() {
+      const now = performance.now();
+      const dt = (now - lastT) / 1000;
+      lastT = now;
+      totalT += dt;
+
+      // Smoothly interpolate cloud coverage towards target
+      cloudCoverage += (cloudCoverageTarget - cloudCoverage) * Math.min(1.0, CONFIG.weather.cloudCoverageSpeed * dt * 5.0);
+
+      // ============================================
+      // Weather System Update
+      // ============================================
+      const wc = CONFIG.weather;
+
+      // Interpolate weather intensity
+      weatherIntensity += (weatherIntensityTarget - weatherIntensity) * Math.min(1.0, wc.transitionSpeed * dt * 2.0);
+      skyDarkening += (skyDarkeningTarget - skyDarkening) * Math.min(1.0, wc.transitionSpeed * dt * 2.0);
+
+      // Lightning system disabled (visual is handled in shader)
+      lightningFlash = 0;
+      lightningActive = false;
+
+      // Thunder sound - synced with shader lightning bolts
+      // Mirror the shader's logic: 3 flash points, each with own interval
+      // Only ~40% of bolts produce thunder sound (the rest are "distant" silent bolts)
+      if (currentWeather === 5) {
+        for (let flashIdx = 0; flashIdx < 3; flashIdx++) {
+          const flashSeed = flashIdx * 7.31;
+
+          // Same hash function as shader
+          const hash21 = (x, y) => {
+            let p = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453;
+            return p - Math.floor(p);
+          };
+
+          // Flash interval (5-12 seconds) - same as shader
+          const flashInterval = 5.0 + hash21(flashSeed, 1.0) * 7.0;
+          const offset = hash21(flashSeed, 2.0);
+          const cycleNum = Math.floor(totalT / flashInterval + offset);
+          const flashPhase = (totalT / flashInterval + offset) % 1;
+
+          // Only some bolts produce thunder (simulates distant vs close lightning)
+          const hasThunder = hash21(flashSeed + cycleNum * 7.3, 99.0) < CONFIG.weather.lightning.thunderChance;
+
+          // Track last cycle we played thunder for this flash
+          if (!window.lastThunderCycle) window.lastThunderCycle = [-1, -1, -1];
+
+          // Play thunder when:
+          // 1. Flash is starting (phase in range 0.01-0.05)
+          // 2. This bolt has thunder (40% chance - closer bolts)
+          // 3. We haven't played thunder for this cycle yet
+          if (hasThunder && flashPhase > 0.01 && flashPhase < 0.05 && cycleNum !== window.lastThunderCycle[flashIdx]) {
+            window.lastThunderCycle[flashIdx] = cycleNum;
+
+            // Delay thunder to simulate distance
+            const lc = CONFIG.weather.lightning;
+            const thunderDelay = lc.thunderDelayMin + Math.random() * lc.thunderDelayRange;
+            setTimeout(() => {
+              weatherSounds.thunder.currentTime = 0;
+              // Random volume
+              weatherSounds.thunder.volume = lc.thunderVolumeMin + Math.random() * lc.thunderVolumeRange;
+              weatherSounds.thunder.play().catch(() => { });
+            }, thunderDelay);
+          }
+        }
+      }
+
+      // FPS
+      frames++;
+      fpsT += dt;
+      if (fpsT >= 1) {
+        fps = frames;
+        frames = 0;
+        fpsT = 0;
+        document.getElementById('fps').textContent = fps;
+      }
+
+      // === Third Person Character Movement ===
+      // Get horizontal forward/right based on camera yaw (not pitch)
+      const fwdX = Math.sin(camYaw);
+      const fwdZ = Math.cos(camYaw);
+      const rightX = Math.cos(camYaw);
+      const rightZ = -Math.sin(camYaw);
+
+      // Sprint with Shift, Fly with F
+      const isSprinting = keys['ShiftLeft'] || keys['ShiftRight'];
+      const isCurrentlyFlying = keys['KeyF'];
+
+      // Speed depends on state:
+      // Flying + Shift = fast fly, Flying = slow fly, Sprinting = run, Swimming = slow, else = walk
+      let speed = baseSpeed;
+      let isSprintFlying = false;  // Track if we're fast-flying
+
+      // Check if currently underwater for speed adjustment
+      const waterLevel = CONFIG.world.waterLevel;
+      const currentlyUnderwater = charPos.y < waterLevel;
+
+      if (isCurrentlyFlying) {
+        if (isSprinting) {
+          speed = flyFastSpeed;   // Fast flying (F + Shift + WASD)
+          isSprintFlying = true;
+        } else {
+          speed = flySlowSpeed;   // Slow flying (F + WASD)
+        }
+      } else if (currentlyUnderwater) {
+        // Swimming speed (slower than walking)
+        const sw = CONFIG.swimming;
+        speed = isSprinting ? sw.swimSpeed * sw.swimSprintMultiplier : sw.swimSpeed;
+      } else if (isSprinting) {
+        speed = baseSpeed * sprintMultiplier;  // Running on ground
+      }
+
+      // Movement input (A = left, D = right relative to camera)
+      let moveX = 0, moveZ = 0, moveY = 0;
+
+      // Determine if deep enough to swim (water must cover avatar by swimDepthThreshold)
+      const swimDepthThreshold = CONFIG.swimming.swimDepthThreshold;
+      const waterDepthAtAvatar = waterLevel - gpuTerrainHeight;  // How deep is water at current position
+      const isDeepEnoughToSwim = currentlyUnderwater && (waterLevel - charPos.y) > swimDepthThreshold;
+
+      // Swimming: Full 3D movement based on camera direction (only when deep enough)
+      if (isDeepEnoughToSwim && !keys['KeyF']) {
+        const sw = CONFIG.swimming;
+        // Calculate 3D forward direction based on camera yaw AND pitch
+        // camPitch: negative = looking up, positive = looking down
+        const cosPitch = Math.cos(camPitch);
+        const sinPitch = Math.sin(camPitch);
+
+        // 3D forward vector (where camera is looking)
+        // INVERTED: sinPitch instead of -sinPitch so looking up goes up
+        const fwd3dX = fwdX * cosPitch;
+        const fwd3dZ = fwdZ * cosPitch;
+        const fwd3dY = sinPitch;  // Looking up (negative pitch) = swim up, looking down = swim down
+
+        // Check if sprinting while swimming
+        const isSprintSwimmingNow = keys['ShiftLeft'] || keys['ShiftRight'];
+
+        // Swimming acceleration - faster when sprinting
+        const swimAccel = isSprintSwimmingNow ? sw.swimSprintAccel : sw.swimAccel;
+        const swimDrag = sw.drag;    // Water resistance (higher = stops faster)
+
+        // Apply swimming speed - significantly faster with Shift
+        const targetSwimSpeed = isSprintSwimmingNow
+          ? sw.swimSpeed * sw.swimSprintMultiplier
+          : sw.swimSpeed;
+
+        // W = swim forward in camera direction (full 3D)
+        if (keys['KeyW']) {
+          swimVelX += fwd3dX * swimAccel * dt;
+          swimVelZ += fwd3dZ * swimAccel * dt;
+          swimVelY += fwd3dY * swimAccel * dt;
+        }
+        // S = sink down (simple downward movement)
+        if (keys['KeyS']) {
+          swimVelY -= swimAccel * dt;
+        }
+        // A/D = strafe left/right (horizontal only)
+        if (keys['KeyA']) {
+          swimVelX += rightX * swimAccel * dt;
+          swimVelZ += rightZ * swimAccel * dt;
+        }
+        if (keys['KeyD']) {
+          swimVelX -= rightX * swimAccel * dt;
+          swimVelZ -= rightZ * swimAccel * dt;
+        }
+
+        // Apply water drag (inertia) - velocity decreases over time
+        const dragFactor = Math.exp(-swimDrag * dt);
+        swimVelX *= dragFactor;
+        swimVelY *= dragFactor;
+        swimVelZ *= dragFactor;
+
+        // Clamp velocity to max swim speed
+        const currentSpeed = Math.sqrt(swimVelX * swimVelX + swimVelY * swimVelY + swimVelZ * swimVelZ);
+        if (currentSpeed > targetSwimSpeed) {
+          const scale = targetSwimSpeed / currentSpeed;
+          swimVelX *= scale;
+          swimVelY *= scale;
+          swimVelZ *= scale;
+        }
+
+        // Apply velocity to position
+        charPos.x += swimVelX * dt;
+        charPos.z += swimVelZ * dt;
+        charPos.y += swimVelY * dt;
+
+        // Set target rotation to face horizontal movement direction
+        if (Math.abs(swimVelX) > 0.1 || Math.abs(swimVelZ) > 0.1) {
+          charTargetRotation = Math.atan2(swimVelX, swimVelZ);
+        }
+
+        // Track movement for animation
+        moveX = swimVelX;
+        moveZ = swimVelZ;
+        moveY = swimVelY;
+
+        // Clamp to water boundaries
+        if (charPos.y > waterLevel) {
+          charPos.y = waterLevel;
+          swimVelY = 0;
+        }
+        if (charPos.y < gpuTerrainHeight) {
+          charPos.y = gpuTerrainHeight;
+          swimVelY = 0;
+        }
+      }
+      // Normal ground/air movement (including shallow water walking)
+      else {
+        // Reset swim velocity when not swimming
+        swimVelX = 0;
+        swimVelY = 0;
+        swimVelZ = 0;
+
+        if (keys['KeyW']) { moveX += fwdX; moveZ += fwdZ; }
+        if (keys['KeyS']) { moveX -= fwdX; moveZ -= fwdZ; }
+        if (keys['KeyA']) { moveX += rightX; moveZ += rightZ; }
+        if (keys['KeyD']) { moveX -= rightX; moveZ -= rightZ; }
+
+        // Normalize and apply movement to character
+        const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+        if (moveLen > 0.001) {
+          moveX /= moveLen;
+          moveZ /= moveLen;
+          charPos.x += moveX * speed * dt;
+          charPos.z += moveZ * speed * dt;
+          // Set target rotation to face movement direction
+          charTargetRotation = Math.atan2(moveX, moveZ);
+        }
+      }
+
+      // Track if moving for animation purposes
+      const isMoving = Math.abs(moveX) > 0.001 || Math.abs(moveZ) > 0.001 || Math.abs(moveY) > 0.001;
+
+      // Smoothly interpolate character rotation towards target
+      let rotationDiff = charTargetRotation - charRotation;
+      // Handle wrap-around (e.g., from -PI to PI)
+      while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
+      while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
+      charRotation += rotationDiff * Math.min(1, rotationSmoothing * dt);
+
+      // Flying with F - 3D movement like swimming (camera direction controls up/down)
+      if (keys['KeyF']) {
+        // Calculate 3D forward direction based on camera yaw AND pitch (same as swimming)
+        const flyCosPitch = Math.cos(camPitch);
+        const flySinPitch = Math.sin(camPitch);
+
+        // 3D forward vector (where camera is looking)
+        const flyFwd3dX = fwdX * flyCosPitch;
+        const flyFwd3dZ = fwdZ * flyCosPitch;
+        const flyFwd3dY = flySinPitch;  // Looking up = fly up, looking down = fly down
+
+        // Check if sprinting while flying
+        const isSprintFlying = keys['ShiftLeft'] || keys['ShiftRight'];
+        const currentFlySpeed = isSprintFlying ? flyFastSpeed : flySlowSpeed;
+
+        // Apply movement based on camera direction
+        if (keys['KeyW']) {
+          // Fly forward in camera direction (3D)
+          charPos.x += flyFwd3dX * currentFlySpeed * dt;
+          charPos.z += flyFwd3dZ * currentFlySpeed * dt;
+          charPos.y += flyFwd3dY * currentFlySpeed * dt;
+        }
+        if (keys['KeyS']) {
+          // Fly backward (opposite to camera direction)
+          charPos.x -= flyFwd3dX * currentFlySpeed * dt;
+          charPos.z -= flyFwd3dZ * currentFlySpeed * dt;
+          charPos.y -= flyFwd3dY * currentFlySpeed * dt;
+        }
+        // Strafe left/right (horizontal only)
+        if (keys['KeyA']) {
+          charPos.x += rightX * currentFlySpeed * dt;
+          charPos.z += rightZ * currentFlySpeed * dt;
+        }
+        if (keys['KeyD']) {
+          charPos.x -= rightX * currentFlySpeed * dt;
+          charPos.z -= rightZ * currentFlySpeed * dt;
+        }
+
+        // When no movement keys, slowly rise (default F behavior)
+        if (!keys['KeyW'] && !keys['KeyS'] && !keys['KeyA'] && !keys['KeyD']) {
+          charPos.y += flyRiseSpeed * dt;
+        }
+
+        // Height limits
+        if (charPos.y > flyMaxHeight) {
+          charPos.y = flyMaxHeight;
+        }
+
+        velocityY = 0;
+
+        // Auto-elevate when hitting terrain while flying
+        // Keep avatar at least 1 meter above ground
+        const minFlyHeight = gpuTerrainHeight + 1.0;
+        if (charPos.y < minFlyHeight) {
+          charPos.y = minFlyHeight;
+        }
+      }
+
+      // Use GPU-computed terrain height for physics (exact match with visual)
+      // Queue compute shader to calculate terrain height for next frame
+      if (!gpuTerrainHeightPending) {
+        gpuTerrainHeightPending = true;
+
+        // Write character position to input buffer
+        device.queue.writeBuffer(terrainHeightInputBuffer, 0, new Float32Array([charPos.x, charPos.z]));
+
+        // Execute compute shader
+        const computeEncoder = device.createCommandEncoder();
+        const computePass = computeEncoder.beginComputePass();
+        computePass.setPipeline(terrainHeightComputePipeline);
+        computePass.setBindGroup(0, terrainHeightBindGroup);
+        computePass.dispatchWorkgroups(1);
+        computePass.end();
+
+        // Copy result to readable buffer
+        computeEncoder.copyBufferToBuffer(terrainHeightOutputBuffer, 0, terrainHeightReadBuffer, 0, 4);
+        device.queue.submit([computeEncoder.finish()]);
+
+        // Read result asynchronously
+        terrainHeightReadBuffer.mapAsync(GPUMapMode.READ).then(() => {
+          const data = new Float32Array(terrainHeightReadBuffer.getMappedRange());
+          gpuTerrainHeight = data[0];
+          terrainHeightReadBuffer.unmap();
+          gpuTerrainHeightPending = false;
+        }).catch(() => {
+          gpuTerrainHeightPending = false;
+        });
+      }
+
+      // Use GPU terrain height for physics (defaults to 0 on first frame)
+      const terrainHeight = gpuTerrainHeight;
+      const characterHeight = CONFIG.character.height;
+
+      // Check if avatar is underwater (feet below water level)
+      const isUnderwater = charPos.y < waterLevel;
+      const waterDepth = waterLevel - charPos.y;  // How deep underwater
+
+      // Physics only on terrain - water has no collision
+      // Avatar can go underwater if terrain is below water level
+      const groundLevel = terrainHeight;
+      isGrounded = charPos.y <= groundLevel + CONFIG.character.groundedThreshold;
+
+      // Swimming physics when deep enough underwater (only applies when NOT actively swimming with WASD)
+      if (isDeepEnoughToSwim && !keys['KeyF']) {
+        const sw = CONFIG.swimming;
+
+        // When entering water, immediately reduce falling velocity
+        if (velocityY < -sw.sinkSpeed) {
+          velocityY = -sw.sinkSpeed;  // Cap falling speed in water
+        }
+
+        // Apply water drag (resistance) - slows down vertical movement
+        velocityY *= (1.0 - sw.drag * dt);
+
+        // Only apply passive physics if not actively moving with WASD
+        const isActivelySwimming = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+        if (!isActivelySwimming) {
+          // Slight natural sinking when idle in water
+          velocityY -= sw.sinkSpeed * sw.idleSinkMultiplier * dt;
+        } else {
+          // When actively swimming, reduce passive velocity quickly
+          velocityY *= sw.activeVelocityDamping;
+        }
+
+        // Clamp velocity
+        velocityY = Math.max(-sw.sinkSpeed, Math.min(sw.riseSpeed, velocityY));
+
+        // Apply passive velocity (separate from active swimming movement)
+        charPos.y += velocityY * dt;
+
+        // Don't go below ground even underwater
+        if (charPos.y < groundLevel) {
+          charPos.y = groundLevel;
+          velocityY = 0;
+          isGrounded = true;
+        }
+
+        // Don't go above water surface
+        if (charPos.y > waterLevel) {
+          charPos.y = waterLevel;
+          velocityY = 0;
+        }
+      }
+      // Normal ground physics (not underwater, not flying)
+      else if (!keys['KeyF']) {
+        // Jump with Space (only on ground, not underwater)
+        if (keys['Space'] && isGrounded) {
+          velocityY = jumpForce;
+          isGrounded = false;
+        }
+
+        // Apply gravity
+        velocityY += gravity * dt;
+        charPos.y += velocityY * dt;
+
+        if (charPos.y < groundLevel) {
+          charPos.y = groundLevel;
+          velocityY = 0;
+          isGrounded = true;
+        }
+      }
+
+      // Update movement sounds
+      const isFlying = keys['KeyF'];
+      const isSwimming = isDeepEnoughToSwim && !isFlying;  // Swimming only when deep enough and not flying
+      const isSprintSwimming = isSwimming && (keys['ShiftLeft'] || keys['ShiftRight']);  // Fast swimming with Shift
+      const isJumping = !isGrounded && velocityY > 0 && !isSwimming;
+      const isFalling = !isGrounded && velocityY < 0 && !isFlying && !isSwimming;
+      const inWater = terrainHeight < waterLevel && charPos.y < waterLevel + 1.0;
+      updateMovementSounds(isMoving, isSprinting, isFlying, isJumping, inWater);
+
+      // === Third Person Camera ===
+      // Camera orbits around character
+      // Zoom is straight horizontal, not affected by pitch angle
+      const camOffsetX = -Math.sin(camYaw) * camDistance;
+      const camOffsetY = Math.sin(-camPitch) * 8 + camHeightOffset;  // Height based on pitch, fixed distance
+      const camOffsetZ = -Math.cos(camYaw) * camDistance;
+
+      const camPos = {
+        x: charPos.x + camOffsetX,
+        y: charPos.y + characterHeight + camOffsetY,
+        z: charPos.z + camOffsetZ
+      };
+
+      // Camera looks at character - height adjusts based on zoom distance
+      // When zoomed in, look at face; when zoomed out, look at body center
+      const zoomFactor = (camDistance - camDistanceMin) / (camDistanceMax - camDistanceMin);
+      const lookHeightMultiplier = CONFIG.camera.lookHeightNear +
+        (CONFIG.camera.lookHeightFar - CONFIG.camera.lookHeightNear) * zoomFactor;
+      const lookTarget = [charPos.x, charPos.y + characterHeight * lookHeightMultiplier, charPos.z];
+
+      // Update UI
+      document.getElementById('position').textContent = `${charPos.x.toFixed(0)}, ${charPos.y.toFixed(0)}, ${charPos.z.toFixed(0)}`;
+
+      // Time display synced with day/night cycle
+      // Uses getFormattedTime from lib/lighting.js
+      document.getElementById('time').textContent = getFormattedTime(totalT, DAY_CYCLE_DURATION);
+
+      // Matrices
+      const proj = perspective(Math.PI / 3, canvas.width / canvas.height, 0.1, 15000);
+      const view = lookAt([camPos.x, camPos.y, camPos.z], lookTarget, [0, 1, 0]);
+      const vp = mul(proj, view);
+
+      // Character model matrix (position + rotation + scale)
+      const charScale = CONFIG.character.scale;
+      const charModelMatrix = mul(
+        mul(translate(charPos.x, charPos.y, charPos.z), rotateY(charRotation)),
+        scale(charScale)
+      );
+
+      // Update uniform buffers (Native WebGPU)
+      device.queue.writeBuffer(cameraBuffer, 0, createCameraData({
+        viewProjection: vp,
+        position: camPos,
+        time: totalT,
+        cloudCoverage: cloudCoverage,
+        starBlur: CONFIG.dayNight.starBlur,
+        skyDarkening: skyDarkening,
+        lightningFlash: lightningFlash,
+        lightningPosX: lightningPosX,
+        lightningPosY: lightningPosY,
+      }));
+
+      device.queue.writeBuffer(terrainBuffer, 0, createTerrainData({
+        modelMatrix: identity(),
+        color: [0.4, 0.6, 0.3],
+        scale: 1
+      }));
+
+      // Ocean uniform buffer - all parameters from CONFIG
+      const oc = CONFIG.ocean;
+      device.queue.writeBuffer(oceanBuffer, 0, createOceanData({
+        modelMatrix: identity(),
+        deepColor: oc.deepColor,
+        waterLevel: CONFIG.world.waterLevel,
+        shallowColor: oc.shallowColor,
+        time: totalT,
+        underwaterTint: oc.underwaterTint,
+        deepDepth: oc.deepDepthThreshold,
+        skyReflection: oc.skyReflectionColor,
+        shallowDepth: oc.shallowDepthThreshold,
+        foamColor: oc.foamColor,
+        veryShallowDepth: oc.veryShallowThreshold,
+        sunColor: oc.sunColor,
+        foamDepthMax: oc.foamDepthMax,
+        sssColor: oc.sssColor,
+        sssStrength: oc.sssStrength,
+        causticsColor: oc.causticsColor,
+        causticsIntensity: oc.causticsIntensity,
+        baseAlphaMin: oc.baseAlphaMin,
+        baseAlphaMax: oc.baseAlphaMax,
+        depthAlphaRange: oc.depthAlphaRange,
+        shallowAlphaBoost: oc.shallowAlphaBoost,
+        distortionStrength: oc.distortionStrength,
+        distortionScale: oc.distortionScale,
+        distortionSpeed: oc.distortionSpeed,
+        distortionWorldScale: oc.distortionWorldScale,
+        causticsScale: oc.causticsScale,
+        causticsSpeed: oc.causticsSpeed,
+        fresnelF0: oc.fresnelF0,
+        fresnelPower: oc.fresnelPower,
+        sunDir: sunDirNorm,
+        skyReflectionStr: oc.skyReflectionStrength,
+        ambientLight: oc.ambientLight,
+        diffuseLight: oc.diffuseLight,
+        lightBoost: oc.lightBoost,
+        foamLightBoost: oc.foamLightBoost,
+        specPower: oc.specPower,
+        specStrength: oc.specStrength,
+        sparklePower: oc.sparklePower,
+        sparkleStrength: oc.sparkleStrength,
+        foamThreshold: oc.foamThreshold,
+        foamEdgeStart: oc.foamEdgeStart,
+        foamBandThreshold: oc.foamBandThreshold,
+        foamEdgeStrength: oc.foamEdgeStrength,
+        foamBandStrength: oc.foamBandStrength,
+        foamAlphaBlend: oc.foamAlphaBlend,
+        sssShallowBoost: oc.sssShallowBoost,
+        sssPower: oc.sssPower,
+        underwaterTintStr: oc.underwaterTintStrength,
+        avatarPos: charPos,
+        avatarHeight: CONFIG.character.scale * CONFIG.character.baseHeight,
+      }));
+
+      device.queue.writeBuffer(characterBuffer, 0, createCharacterData({
+        modelMatrix: charModelMatrix,
+        color: CONFIG.character.skinColor,
+      }));
+
+      // ============================================
+      // Update Light Buffer for Shadow Mapping
+      // ============================================
+      // Update light direction based on time for dynamic day/night cycle
+      // Uses sun during day, moon during night for shadow casting
+      lightInfo = getLightDirection(totalT, DAY_CYCLE_DURATION);
+      sunDirNorm = lightInfo.direction;
+
+      // Light projection - orthographic, follows character
+      const SHADOW_DISTANCE = CONFIG.shadows.area;
+      const SHADOW_NEAR = CONFIG.shadows.near;
+      const SHADOW_FAR = CONFIG.shadows.far;
+
+      // Light position - offset from character along light direction (sun or moon)
+      // For moon shadows, we use a longer distance and lower intensity
+      const lightDistance = lightInfo.isNight ? 180 : 150;
+      const lightPosX = charPos.x + sunDirNorm[0] * lightDistance;
+      const lightPosY = charPos.y + sunDirNorm[1] * lightDistance + 50;
+      const lightPosZ = charPos.z + sunDirNorm[2] * lightDistance;
+
+      // Orthographic projection for directional light
+      const lightProj = new Float32Array([
+        2 / SHADOW_DISTANCE, 0, 0, 0,
+        0, 2 / SHADOW_DISTANCE, 0, 0,
+        0, 0, -2 / (SHADOW_FAR - SHADOW_NEAR), 0,
+        0, 0, -(SHADOW_FAR + SHADOW_NEAR) / (SHADOW_FAR - SHADOW_NEAR), 1
+      ]);
+
+      // Light view matrix - looking at character from light position
+      const lightView = lookAt([lightPosX, lightPosY, lightPosZ], [charPos.x, charPos.y, charPos.z], [0, 1, 0]);
+      const lightVP = mul(lightProj, lightView);
+
+      device.queue.writeBuffer(lightBuffer, 0, createLightData({
+        viewProjection: lightVP,
+        position: charPos,
+      }));
+
+      // ============================================
+      // Shadow Pass - Render depth from light's view
+      // ============================================
+      const enc = device.createCommandEncoder();
+
+      // Check if camera is underwater
+      const cameraUnderwater = camPos.y < waterLevel;
+      const cameraDepth = Math.max(0, waterLevel - camPos.y);
+
+      // Update underwater buffer if camera is underwater
+      if (cameraUnderwater) {
+        const uw = CONFIG.underwater;
+        device.queue.writeBuffer(underwaterBuffer, 0, createUnderwaterData({
+          cameraPos: camPos,
+          time: totalT,
+          waterLevel: waterLevel,
+          cameraDepth: cameraDepth,
+          fogDensity: uw.fogDensity,
+          fogStart: uw.fogStart,
+          fogEnd: uw.fogEnd,
+          tintStrength: uw.tintStrength,
+          godRaysIntensity: uw.godRaysIntensity,
+          godRaysSpeed: uw.godRaysSpeed,
+          godRaysDensity: uw.godRaysDensity,
+          godRaysLength: uw.godRaysLength,
+          causticsIntensity: uw.causticsIntensity,
+          causticsScale: uw.causticsScale,
+          causticsSpeed: uw.causticsSpeed,
+          surfaceWaveStrength: uw.surfaceWaveStrength,
+          surfaceFresnelPower: uw.surfaceFresnelPower,
+          bubblesEnabled: uw.bubblesEnabled ? 1.0 : 0.0,
+          bubblesCount: uw.bubblesCount,
+          bubblesSpeed: uw.bubblesSpeed,
+          bubblesSize: uw.bubblesSize,
+          depthDarkenStart: uw.depthDarkenStart,
+          depthDarkenEnd: uw.depthDarkenEnd,
+          depthDarkenStrength: uw.depthDarkenStrength,
+          blurRadius: uw.blurRadius,
+          fogColor: uw.fogColor,
+          tintColor: uw.tintColor,
+          godRaysColor: uw.godRaysColor,
+          surfaceColor: uw.surfaceColor,
+          bubblesColor: uw.bubblesColor,
+        }));
+      }
+
+      // Ocean pipeline
+      // Then copy to screen or apply underwater effect
+      const mainColorView = sceneTexture.createView();
+
+      // Shadow pass
+      const shadowPass = enc.beginRenderPass({
+        colorAttachments: [],
+        depthStencilAttachment: {
+          view: shadowMapTexture.createView(),
+          depthClearValue: 1.0,
+          depthLoadOp: 'clear',
+          depthStoreOp: 'store',
+        },
+      });
+
+      // Render terrain to shadow map
+      shadowPass.setPipeline(shadowTerrainPipeline);
+      shadowPass.setBindGroup(0, shadowTerrainBG);
+      shadowPass.setVertexBuffer(0, terrainVB);
+      shadowPass.setIndexBuffer(terrainIB, 'uint32');
+      shadowPass.drawIndexed(terrain.indices.length);
+
+      // Render character to shadow map (if ready)
+      if (avatarLoaded && avatarVB && avatarIB && boneMatricesBuffer && shadowCharacterBG) {
+        shadowPass.setPipeline(shadowCharacterPipeline);
+        shadowPass.setBindGroup(0, shadowCharacterBG);
+        shadowPass.setVertexBuffer(0, avatarVB);
+        shadowPass.setIndexBuffer(avatarIB, 'uint32');
+        shadowPass.drawIndexed(avatarIndexCount);
+      }
+
+      shadowPass.end();
+
+      // ============================================
+      // Main Render Pass - Opaque objects (Sky, Terrain, Character)
+      // ============================================
+      const colorView = mainColorView;  // Always render to sceneTexture first
+      const screenView = context.getCurrentTexture().createView();  // Always get screen for final output
+      const depthView = depthTexture.createView();
+
+      const opaquePass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: colorView,
+          clearValue: { r: 0.5, g: 0.7, b: 1.0, a: 1.0 },
+          loadOp: 'clear', storeOp: 'store',
+        }],
+        depthStencilAttachment: {
+          view: depthView,
+          depthClearValue: 1.0, depthLoadOp: 'clear', depthStoreOp: 'store',
+        },
+      });
+
+      // Sky
+      opaquePass.setPipeline(skyPipeline);
+      opaquePass.setBindGroup(0, skyBG);
+      opaquePass.draw(6);
+
+      // Terrain
+      opaquePass.setPipeline(terrainPipeline);
+      opaquePass.setBindGroup(0, terrainBG);
+      opaquePass.setVertexBuffer(0, terrainVB);
+      opaquePass.setIndexBuffer(terrainIB, 'uint32');
+      opaquePass.drawIndexed(terrain.indices.length);
+
+      // Character (avatar) - Rendered BEFORE ocean so depth buffer has character data
+      if (avatarLoaded && avatarVB && avatarIB && avatarTexture && avatarSampler && boneMatricesBuffer) {
+        // Update animation
+        if (animationSystem) {
+          // Choose animation based on movement state
+          // Priority: Swimming > Flying > Jumping/Falling > Running > Walking > Idle
+
+          let targetAnim = 'Idle';
+
+          if (isSwimming) {
+            // Swimming animations - Floating for slow, can use different animation for fast later
+            // For now both use Floating, but ready for: 'SwimFast' when available
+            if (isSprintSwimming && isMoving) {
+              targetAnim = 'Floating';  // TODO: Change to 'SwimFast' when animation available
+            } else {
+              targetAnim = 'Floating';  // Slow swimming / idle in water
+            }
+          } else if (isFlying) {
+            // Flying states - always use Floating animation
+            targetAnim = 'Floating';
+          } else if (isFalling) {
+            // Falling after releasing F - use Jump animation (falling pose)
+            targetAnim = 'Jump';
+          } else if (isJumping) {
+            targetAnim = 'Jump';
+          } else if (isMoving && isSprinting) {
+            targetAnim = 'Run';
+          } else if (isMoving) {
+            targetAnim = 'Walk';
+          }
+
+          if (animationSystem.currentAnimation?.name !== targetAnim) {
+            animationSystem.play(targetAnim);
+          }
+
+          animationSystem.update(dt);
+          device.queue.writeBuffer(boneMatricesBuffer, 0, animationSystem.getBoneMatrices());
+        }
+
+        // Create bind group lazily when texture is ready
+        if (!characterBG) {
+          characterBG = device.createBindGroup({
+            layout: characterLayout,
+            entries: [
+              { binding: 0, resource: { buffer: cameraBuffer } },
+              { binding: 1, resource: { buffer: characterBuffer } },
+              { binding: 2, resource: avatarTexture.createView() },
+              { binding: 3, resource: avatarSampler },
+              { binding: 4, resource: { buffer: boneMatricesBuffer } },
+              { binding: 5, resource: { buffer: lightBuffer } },
+              { binding: 6, resource: shadowMapTexture.createView() },
+              { binding: 7, resource: shadowMapSampler },
+            ],
+          });
+          console.log('✅ Character bind group created with animations and shadows!');
+        }
+
+        // Create shadow character bind group if needed
+        if (!shadowCharacterBG) {
+          shadowCharacterBG = device.createBindGroup({
+            layout: shadowCharacterLayout,
+            entries: [
+              { binding: 0, resource: { buffer: lightBuffer } },
+              { binding: 1, resource: { buffer: characterBuffer } },
+              { binding: 2, resource: { buffer: boneMatricesBuffer } },
+            ],
+          });
+          console.log('✅ Shadow character bind group created!');
+        }
+
+        opaquePass.setPipeline(characterPipeline);
+        opaquePass.setBindGroup(0, characterBG);
+        opaquePass.setVertexBuffer(0, avatarVB);
+        opaquePass.setIndexBuffer(avatarIB, 'uint32');
+        opaquePass.drawIndexed(avatarIndexCount);
+      }
+
+      opaquePass.end();
+
+      // Create ocean bind group (done dynamically for resize support)
+      if (!oceanBG) {
+        oceanBG = device.createBindGroup({
+          layout: oceanLayout,
+          entries: [
+            { binding: 0, resource: { buffer: cameraBuffer } },
+            { binding: 1, resource: oceanBuffer },
+            { binding: 2, resource: waterBumpTexture.createView() },
+            { binding: 3, resource: textureSampler },
+          ],
+        });
+        console.log('✅ Ocean bind group created with water bump texture!');
+      }
+
+      // ============================================
+      // Transparent Pass - Ocean (reads depth from opaque pass)
+      // ============================================
+      const transparentPass = enc.beginRenderPass({
+        colorAttachments: [{
+          view: colorView,
+          loadOp: 'load', storeOp: 'store',  // Keep existing color
+        }],
+        depthStencilAttachment: {
+          view: depthView,
+          depthLoadOp: 'load', depthStoreOp: 'store',  // Keep existing depth
+        },
+      });
+
+      // Ocean - Rendered AFTER character for proper blending
+      transparentPass.setPipeline(oceanPipeline);
+      transparentPass.setBindGroup(0, oceanBG);
+      transparentPass.setVertexBuffer(0, oceanVB);
+      transparentPass.setIndexBuffer(oceanIB, 'uint32');
+      transparentPass.drawIndexed(ocean.indices.length);
+
+      // ============================================
+      // Volumetric God Rays (only when underwater AND during day)
+      // ============================================
+      if (cameraUnderwater) {
+        // Calculate day factor - god rays only visible during daytime
+        // Same formula as shaders: dayFactor based on sun height
+        const timeInCycle = (totalT % DAY_CYCLE_DURATION) / DAY_CYCLE_DURATION;  // 0-1
+        const sunAngle = timeInCycle * Math.PI * 2 - Math.PI / 2;  // -PI/2 to 3PI/2
+        const sunHeight = Math.sin(sunAngle);  // -1 at midnight, +1 at noon
+        // dayFactor: 0 at night, 1 during day, smooth transition
+        const dayFactor = Math.max(0, Math.min(1, (sunHeight + 0.1) / 0.4));
+
+        // Update god rays buffer with day-adjusted intensity
+        device.queue.writeBuffer(godRaysBuffer, 0, createGodRaysData({
+          waterLevel: CONFIG.world.waterLevel,
+          intensity: GOD_RAYS_CONFIG.intensity * dayFactor,
+          numRays: GOD_RAYS_CONFIG.numRays,
+          rayWidth: GOD_RAYS_CONFIG.rayWidth,
+          rayLength: GOD_RAYS_CONFIG.rayLength,
+          speed: GOD_RAYS_CONFIG.speed,
+        }));
+
+        transparentPass.setPipeline(godRaysPipeline);
+        transparentPass.setBindGroup(0, godRaysBG);
+        // Draw instances: 6 vertices per quad, numRays instances
+        transparentPass.draw(6, GOD_RAYS_CONFIG.numRays);
+
+        // ============================================
+        // Underwater Bubbles - Beautiful translucent particles
+        // ============================================
+        device.queue.writeBuffer(bubblesBuffer, 0, createBubblesData({
+          waterLevel: CONFIG.world.waterLevel,
+          numBubbles: BUBBLES_CONFIG.numBubbles,
+          minSize: BUBBLES_CONFIG.minSize,
+          maxSize: BUBBLES_CONFIG.maxSize,
+          riseSpeed: BUBBLES_CONFIG.riseSpeed,
+          wobbleSpeed: BUBBLES_CONFIG.wobbleSpeed,
+          wobbleAmount: BUBBLES_CONFIG.wobbleAmount,
+          spawnRadius: BUBBLES_CONFIG.spawnRadius,
+        }));
+
+        transparentPass.setPipeline(bubblesPipeline);
+        transparentPass.setBindGroup(0, bubblesBG);
+        // Draw instances: 6 vertices per quad, numBubbles instances
+        transparentPass.draw(6, BUBBLES_CONFIG.numBubbles);
+      }
+
+      // ============================================
+      // WEATHER EFFECTS - Rain, Snow, Lightning
+      // Rendered in transparent pass above water
+      // ============================================
+      if (currentWeather >= 3 && !cameraUnderwater) {
+        const wr = CONFIG.weather.rain;
+        const ws = CONFIG.weather.snow;
+
+        // Rain (weather 3, 4, 5)
+        if (currentWeather >= 3 && currentWeather <= 5) {
+          // Determine particle count based on intensity
+          let particleCount = wr.lightParticles;
+          if (currentWeather === 4) particleCount = wr.heavyParticles;
+          if (currentWeather === 5) particleCount = wr.stormParticles;
+
+          device.queue.writeBuffer(rainBuffer, 0, createRainData({
+            numParticles: particleCount,
+            speed: wr.speed,
+            length: wr.length,
+            width: wr.width,
+            windStrength: wr.windStrength * (currentWeather === 5 ? 1.5 : 1.0),
+            spawnRadius: wr.spawnRadius,
+            spawnHeight: wr.spawnHeight,
+            intensity: weatherIntensity,
+            color: wr.color,
+            opacity: wr.opacity * weatherIntensity,
+            lightningFlash: lightningFlash,
+          }));
+
+          transparentPass.setPipeline(rainPipeline);
+          transparentPass.setBindGroup(0, rainBG);
+          transparentPass.draw(6, Math.floor(particleCount * weatherIntensity));
+        }
+
+        // Snow (weather 6)
+        if (currentWeather === 6) {
+          device.queue.writeBuffer(snowBuffer, 0, createSnowData({
+            numParticles: ws.particles,
+            speed: ws.speed,
+            wobbleSpeed: ws.wobbleSpeed,
+            wobbleAmount: ws.wobbleAmount,
+            minSize: ws.minSize,
+            maxSize: ws.maxSize,
+            spawnRadius: ws.spawnRadius,
+            spawnHeight: ws.spawnHeight,
+            color: ws.color,
+            opacity: ws.opacity * weatherIntensity,
+          }));
+
+          transparentPass.setPipeline(snowPipeline);
+          transparentPass.setBindGroup(0, snowBG);
+          transparentPass.draw(6, Math.floor(ws.particles * weatherIntensity));
+        }
+
+        // Lightning bolts (weather 5, only when active)
+        if (currentWeather === 5 && lightningActive) {
+          const lc = CONFIG.weather.lightning;
+
+          device.queue.writeBuffer(lightningBuffer, 0, createLightningData({
+            isActive: 1.0,
+            startTime: lightningStartTime,
+            boltDuration: lc.boltDuration,
+            flashIntensity: lc.flashIntensity,
+            startX: lightningX,
+            startZ: lightningZ,
+            seed: lightningSeed,
+            numBranches: lc.boltBranches,
+          }));
+
+          transparentPass.setPipeline(lightningPipeline);
+          transparentPass.setBindGroup(0, lightningBG);
+          // Volumetric lightning: 16 segments × 3 glow layers × 6 bolts (2 main + 4 branches)
+          transparentPass.draw(6, 16 * 3 * 6);
+        }
+      }
+
+      transparentPass.end();
+
+      // ============================================
+      // Underwater Effect Pass (fullscreen post-process)
+      // ============================================
+      if (cameraUnderwater) {
+        // Create bind group for underwater effect
+        const underwaterBG = device.createBindGroup({
+          layout: underwaterLayout,
+          entries: [
+            { binding: 0, resource: { buffer: underwaterBuffer } },
+            { binding: 1, resource: sceneTexture.createView() },
+            { binding: 2, resource: sceneSampler },
+          ],
+        });
+
+        const underwaterPass = enc.beginRenderPass({
+          colorAttachments: [{
+            view: screenView,
+            loadOp: 'clear', storeOp: 'store',
+          }],
+        });
+
+        underwaterPass.setPipeline(underwaterPipeline);
+        underwaterPass.setBindGroup(0, underwaterBG);
+        underwaterPass.draw(3);  // Fullscreen triangle
+
+        underwaterPass.end();
+      } else {
+        // Not underwater - reset underwater buffer with cameraDepth = 0 to disable blur
+        const uw = CONFIG.underwater;
+        device.queue.writeBuffer(underwaterBuffer, 0, createUnderwaterData({
+          cameraPos: camPos,
+          time: totalT,
+          waterLevel: waterLevel,
+          cameraDepth: 0.0,
+          fogDensity: uw.fogDensity,
+          fogStart: uw.fogStart,
+          fogEnd: uw.fogEnd,
+          tintStrength: uw.tintStrength,
+          godRaysIntensity: uw.godRaysIntensity,
+          godRaysSpeed: uw.godRaysSpeed,
+          godRaysDensity: uw.godRaysDensity,
+          godRaysLength: uw.godRaysLength,
+          causticsIntensity: uw.causticsIntensity,
+          causticsScale: uw.causticsScale,
+          causticsSpeed: uw.causticsSpeed,
+          surfaceWaveStrength: uw.surfaceWaveStrength,
+          surfaceFresnelPower: uw.surfaceFresnelPower,
+          bubblesEnabled: 0.0,
+          bubblesCount: uw.bubblesCount,
+          bubblesSpeed: uw.bubblesSpeed,
+          bubblesSize: uw.bubblesSize,
+          depthDarkenStart: uw.depthDarkenStart,
+          depthDarkenEnd: uw.depthDarkenEnd,
+          depthDarkenStrength: uw.depthDarkenStrength,
+          blurRadius: uw.blurRadius,
+          fogColor: uw.fogColor,
+          tintColor: uw.tintColor,
+          godRaysColor: uw.godRaysColor,
+          surfaceColor: uw.surfaceColor,
+          bubblesColor: uw.bubblesColor,
+        }));
+
+        // Blit sceneTexture to screen using a simple pass
+        const blitBG = device.createBindGroup({
+          layout: underwaterLayout,
+          entries: [
+            { binding: 0, resource: { buffer: underwaterBuffer } },
+            { binding: 1, resource: sceneTexture.createView() },
+            { binding: 2, resource: sceneSampler },
+          ],
+        });
+
+        const blitPass = enc.beginRenderPass({
+          colorAttachments: [{
+            view: screenView,
+            loadOp: 'clear', storeOp: 'store',
+          }],
+        });
+
+        // Use underwater pipeline but with cameraUnderwater=false the effect is minimal
+        blitPass.setPipeline(underwaterPipeline);
+        blitPass.setBindGroup(0, blitBG);
+        blitPass.draw(3);
+        blitPass.end();
+      }
+
+      device.queue.submit([enc.finish()]);
+
+      requestAnimationFrame(render);
+    }
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      depthTexture.destroy();
+      depthTexture = device.createTexture({
+        size: [canvas.width, canvas.height],
+        format: 'depth32float',
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+      });
+      // Recreate scene texture for underwater effect
+      sceneTexture.destroy();
+      sceneTexture = device.createTexture({
+        size: [canvas.width, canvas.height],
+        format,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_SRC,
+      });
+      // Reset ocean bind group so it gets recreated with new textures
+      oceanBG = null;
+    });
+
+    console.log('🌍 WebGPU World started!');
+    render();
+  </script>
+</body>
+
+</html>
