@@ -34,22 +34,24 @@
       top: 20px;
       left: 20px;
       color: white;
-      background: rgba(0, 0, 0, 0.75);
-      padding: 15px 20px;
-      border-radius: 10px;
-      font-size: 14px;
-      backdrop-filter: blur(10px);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 12px 16px;
+      border-radius: 12px;
+      font-size: 13px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       z-index: 100;
     }
 
     #ui h1 {
-      font-size: 18px;
-      margin-bottom: 12px;
+      font-size: 16px;
+      margin-bottom: 10px;
       color: #4fc3f7;
     }
 
     #ui p {
-      margin: 4px 0;
+      margin: 3px 0;
+      opacity: 0.9;
     }
 
     #controls {
@@ -57,11 +59,137 @@
       bottom: 20px;
       left: 20px;
       color: white;
-      background: rgba(0, 0, 0, 0.75);
-      padding: 15px;
-      border-radius: 10px;
-      font-size: 13px;
+      background: rgba(0, 0, 0, 0.4);
+      padding: 14px 18px;
+      border-radius: 12px;
+      font-size: 11px;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       z-index: 100;
+      line-height: 1.6;
+    }
+
+    #controls p {
+      margin: 6px 0;
+      opacity: 0.85;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #controls p:first-child {
+      margin-top: 0;
+    }
+
+    #controls p:last-child {
+      margin-bottom: 0;
+    }
+
+    #controls .control-group {
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+      padding-top: 8px;
+      margin-top: 8px;
+    }
+
+    #time-controls {
+      position: fixed;
+      top: 15px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.4);
+      padding: 6px 12px;
+      border-radius: 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: white;
+      z-index: 100;
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    
+    #time-slider {
+      width: 120px;
+      height: 4px;
+      cursor: pointer;
+      -webkit-appearance: none;
+      appearance: none;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 2px;
+      outline: none;
+    }
+    
+    #time-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 12px;
+      height: 12px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    
+    #time-slider::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      background: #fff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    
+    .time-label {
+      font-family: monospace;
+      font-size: 11px;
+      min-width: 36px;
+      text-align: center;
+      opacity: 0.8;
+    }
+    
+    /* Toggle switch */
+    .toggle-switch {
+      position: relative;
+      width: 28px;
+      height: 16px;
+      cursor: pointer;
+    }
+    
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    
+    .toggle-slider {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      transition: 0.2s;
+    }
+    
+    .toggle-slider:before {
+      content: "";
+      position: absolute;
+      height: 12px;
+      width: 12px;
+      left: 2px;
+      bottom: 2px;
+      background: white;
+      border-radius: 50%;
+      transition: 0.2s;
+    }
+    
+    .toggle-switch input:checked + .toggle-slider {
+      background: rgba(79, 195, 247, 0.6);
+    }
+    
+    .toggle-switch input:checked + .toggle-slider:before {
+      transform: translateX(12px);
     }
 
     kbd {
@@ -112,16 +240,27 @@
     <h1>🌍 OVGRID</h1>
     <p>FPS: <span id="fps">0</span></p>
     <p>Position: <span id="position">0, 50, 0</span></p>
-    <p>Time: <span id="time">12:00</span></p>
+  </div>
+
+  <div id="time-controls" class="hidden">
+    <label class="toggle-switch" title="Auto Cycle">
+      <input type="checkbox" id="auto-time" checked>
+      <span class="toggle-slider"></span>
+    </label>
+    <input type="range" id="time-slider" min="0" max="100" value="0" step="0.1">
+    <span id="time-display" class="time-label">00:00</span>
   </div>
 
   <div id="controls" class="hidden">
-    <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> - Move</p>
-    <p><kbd>Space</kbd> - Jump | <kbd>F</kbd> - Fly (look up/down to ascend/descend)</p>
-    <p><kbd>Shift</kbd> - Sprint</p>
-    <p>Drag mouse - Look around</p>
-    <p><kbd>1</kbd><kbd>2</kbd> - Clouds | <kbd>0</kbd> - Clear</p>
-    <p><kbd>3</kbd> - Rain | <kbd>4</kbd> - Heavy | <kbd>5</kbd> - Storm | <kbd>6</kbd> - Snow</p>
+    <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</p>
+    <p><kbd>Space</kbd> Jump</p>
+    <p><kbd>F</kbd> Fly <span style="opacity:0.6; font-size:10px">(look up/down)</span></p>
+    <p><kbd>Shift</kbd> Sprint</p>
+    <div class="control-group">
+      <p><kbd>1</kbd><kbd>2</kbd> Clouds · <kbd>0</kbd> Clear</p>
+      <p><kbd>3</kbd> Rain · <kbd>4</kbd> Heavy · <kbd>5</kbd> Storm</p>
+      <p><kbd>6</kbd> Snow</p>
+    </div>
   </div>
 
   <div id="error">
@@ -218,6 +357,18 @@
     }
 
     // ============================================
+    // Initialize Basis Transcoder FIRST (before WebGPU)
+    // This ensures WASM memory is allocated before GPU resources
+    // ============================================
+    console.log('🔧 Pre-initializing Basis transcoder...');
+    const basisReady = await initBasisTranscoder();
+    if (basisReady) {
+      console.log('✅ Basis transcoder pre-initialized successfully');
+    } else {
+      console.warn('⚠️ Basis transcoder not available - KTX2 loading may fall back to procedural textures');
+    }
+
+    // ============================================
     // Initialize WebGPU (Native)
     // ============================================
     const canvas = document.getElementById('canvas');
@@ -278,6 +429,7 @@
     
     // Sand texture from local file
     let sandTexture;
+    let sandNormalTexture;
     if (CONFIG.textures.useImageSand) {
       try {
         sandTexture = await loadTexture(device, CONFIG.textures.sand);
@@ -286,8 +438,21 @@
         console.warn('⚠️ Could not load sand image, falling back to procedural:', e.message);
         sandTexture = createSandTexture(device);
       }
+      try {
+        sandNormalTexture = await loadTexture(device, CONFIG.textures.sandNormal);
+        console.log('✅ Loaded sand normal texture from image:', CONFIG.textures.sandNormal);
+      } catch (e) {
+        console.warn('⚠️ Could not load sand normal image:', e.message);
+        sandNormalTexture = null;
+      }
     } else {
       sandTexture = createSandTexture(device);
+      sandNormalTexture = null;
+    }
+    
+    // Create a flat normal texture as fallback for sand if normal map failed to load
+    if (!sandNormalTexture) {
+      sandNormalTexture = createFlatNormalTexture(device);
     }
     
     // Rock texture from local files
@@ -489,6 +654,7 @@
         { binding: 9, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'comparison' } },
         { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Rock normal map
         { binding: 11, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Grass normal map
+        { binding: 12, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Sand normal map
       ],
     });
 
@@ -827,6 +993,7 @@
         { binding: 9, resource: shadowMapSampler },
         { binding: 10, resource: rockNormalTexture.createView() },
         { binding: 11, resource: grassNormalTexture.createView() },
+        { binding: 12, resource: sandNormalTexture.createView() },
       ],
     });
 
@@ -889,8 +1056,8 @@
     const inputSystem = createInputSystem(canvas, {
       onKeyDown: (code, keys) => {
         // Cloud coverage controls
-        if (code === 'Digit1') weatherSystem.adjustCloudCoverage(0.1);
-        if (code === 'Digit2') weatherSystem.adjustCloudCoverage(-0.1);
+        if (code === 'Digit1') weatherSystem.adjustCloudCoverage(1);
+        if (code === 'Digit2') weatherSystem.adjustCloudCoverage(-1);
         // Weather controls
         if (code === 'Digit3') weatherSystem.setWeather(3);  // Light rain
         if (code === 'Digit4') weatherSystem.setWeather(4);  // Heavy rain
@@ -930,6 +1097,40 @@
     // Render Loop
     // ============================================
     let lastT = performance.now(), totalT = 0, frames = 0, fps = 0, fpsT = 0;
+    
+    // Time control state - restore from localStorage
+    const savedAutoTime = localStorage.getItem('ovgrid-auto-time');
+    const savedDayTime = localStorage.getItem('ovgrid-day-time');
+    let isTimeAuto = savedAutoTime !== null ? savedAutoTime === 'true' : true;
+    let dayTime = savedDayTime !== null ? parseFloat(savedDayTime) : 0;
+    
+    // Time control UI
+    const timeControlsEl = document.getElementById('time-controls');
+    const autoTimeCheckbox = document.getElementById('auto-time');
+    const timeSlider = document.getElementById('time-slider');
+    const timeDisplay = document.getElementById('time-display'); // New display in controls
+    
+    // Restore UI state from saved values
+    autoTimeCheckbox.checked = isTimeAuto;
+    if (!isTimeAuto) {
+      const pct = (dayTime / DAY_CYCLE_DURATION) * 100;
+      timeSlider.value = pct;
+    }
+    
+    timeControlsEl.classList.remove('hidden');
+    
+    autoTimeCheckbox.addEventListener('change', (e) => {
+      isTimeAuto = e.target.checked;
+      localStorage.setItem('ovgrid-auto-time', isTimeAuto);
+    });
+    
+    timeSlider.addEventListener('input', (e) => {
+      if (!isTimeAuto) {
+        const pct = parseFloat(e.target.value);
+        dayTime = (pct / 100) * DAY_CYCLE_DURATION;
+        localStorage.setItem('ovgrid-day-time', dayTime);
+      }
+    });
 
     // Show UI
     loadingEl.classList.add('hidden');
@@ -941,6 +1142,15 @@
       const dt = (now - lastT) / 1000;
       lastT = now;
       totalT += dt;
+      
+      // Update day time
+      if (isTimeAuto) {
+        dayTime += dt;
+        // Update slider
+        const cycleTime = dayTime % DAY_CYCLE_DURATION;
+        const pct = (cycleTime / DAY_CYCLE_DURATION) * 100;
+        timeSlider.value = pct;
+      }
 
       // Update weather system
       weatherSystem.update(dt, totalT);
@@ -1323,7 +1533,8 @@
 
       // Time display synced with day/night cycle
       // Uses getFormattedTime from lib/lighting.js
-      document.getElementById('time').textContent = getFormattedTime(totalT, DAY_CYCLE_DURATION);
+      const formattedTime = getFormattedTime(dayTime, DAY_CYCLE_DURATION);
+      if (timeDisplay) timeDisplay.textContent = formattedTime;
 
       // Matrices
       const proj = perspective(Math.PI / 3, canvas.width / canvas.height, 0.1, 15000);
@@ -1348,6 +1559,7 @@
         lightningFlash: weatherSystem.lightningFlash,
         lightningPosX: weatherSystem.lightningPosX,
         lightningPosY: weatherSystem.lightningPosY,
+        dayTime: dayTime,
       }));
 
       device.queue.writeBuffer(terrainBuffer, 0, createTerrainData({
@@ -1421,7 +1633,7 @@
       // ============================================
       // Update light direction based on time for dynamic day/night cycle
       // Uses sun during day, moon during night for shadow casting
-      lightInfo = getLightDirection(totalT, DAY_CYCLE_DURATION);
+      lightInfo = getLightDirection(dayTime, DAY_CYCLE_DURATION);
       sunDirNorm = lightInfo.direction;
 
       // Light projection - orthographic, follows character
@@ -1886,6 +2098,7 @@
 
     // Resize handler
     window.addEventListener('resize', () => {
+      const dpr = Math.min(window.devicePixelRatio, 2);
       canvas.width = window.innerWidth * dpr;
       canvas.height = window.innerHeight * dpr;
       depthTexture.destroy();
