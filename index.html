@@ -192,6 +192,7 @@
       createInputSystem,
       createSoundSystem,
       createCharacterSystem,
+      createNPCSystem,
     } from './lib/index.js';
 
     // Make config globally accessible for debugging/tweaking
@@ -354,6 +355,21 @@
     // Character System (Modularized)
     // ============================================
     const characterSystem = createCharacterSystem(device);
+
+    // ============================================
+    // NPC System (Modularized) - 10 Ready Player Me avatars
+    // ============================================
+    const npcSystem = createNPCSystem(device, {
+      npcCount: 10,
+      terrainSize: CONFIG.terrain.size,
+      detectionRadius: 40,
+      stopDistance: 8,
+      wanderRadius: 30,
+      minSeparation: 4,
+      baseSpeed: 15,
+    });
+    // Start loading NPCs asynchronously
+    npcSystem.init();
 
     // ============================================
     // Geometry Generation (using lib/geometry.js)
@@ -818,6 +834,9 @@
     // Shadow character bind group will be created after buffers are ready
     let shadowCharacterBG = null;
 
+    // NPC bind groups created flag
+    let npcBindGroupsCreated = false;
+
     // Ensure bone matrices buffer is ready from character system
     characterSystem.ensureBoneMatricesBuffer();
 
@@ -1270,6 +1289,18 @@
       const inWater = terrainHeight < waterLevel && charPos.y < waterLevel + 1.0;
       soundSystem.updateMovementSounds(isMoving, isSprinting, isFlying, isJumping, inWater);
 
+      // Update NPCs (AI behavior, animation, position)
+      if (npcSystem.isReady()) {
+        // Simple terrain height function for NPCs (uses same height as player when near)
+        const getTerrainHeightForNPC = (x, z) => {
+          // NPCs use ground level as approximation
+          // For more accuracy, could compute per-NPC but this is simpler
+          return gpuTerrainHeight;
+        };
+        npcSystem.update(dt, charPos.x, charPos.y, charPos.z, getTerrainHeightForNPC);
+        npcSystem.updateUniforms(CONFIG.character.modelScale);
+      }
+
       // === Third Person Camera ===
       // Camera orbits around character
       // Zoom is straight horizontal, not affected by pitch angle
@@ -1502,6 +1533,23 @@
         shadowPass.drawIndexed(characterSystem.avatarIndexCount);
       }
 
+      // Render NPCs to shadow map
+      if (npcSystem.isReady()) {
+        // Create NPC bind groups once (lazy initialization)
+        if (!npcBindGroupsCreated) {
+          npcSystem.createBindGroups(
+            characterLayout,
+            shadowCharacterLayout,
+            cameraBuffer,
+            lightBuffer,
+            shadowMapTexture,
+            shadowMapSampler
+          );
+          npcBindGroupsCreated = true;
+        }
+        npcSystem.renderShadows(shadowPass, shadowCharacterPipeline);
+      }
+
       shadowPass.end();
 
       // ============================================
@@ -1579,6 +1627,11 @@
         opaquePass.setVertexBuffer(0, characterSystem.avatarVB);
         opaquePass.setIndexBuffer(characterSystem.avatarIB, 'uint32');
         opaquePass.drawIndexed(characterSystem.avatarIndexCount);
+      }
+
+      // Render NPCs
+      if (npcSystem.isReady()) {
+        npcSystem.render(opaquePass, characterPipeline);
       }
 
       opaquePass.end();
