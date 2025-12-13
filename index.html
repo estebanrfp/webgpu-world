@@ -1026,20 +1026,7 @@
 
     let charRotation = savedRotation ? parseFloat(savedRotation) : 0;  // Character facing direction (yaw)
     let charTargetRotation = charRotation;  // Target rotation for smooth interpolation
-    const rotationSmoothing = CONFIG.movement.rotationSmoothing;
 
-    // Physics state
-    let velocityY = 0;
-    let swimVelX = 0, swimVelY = 0, swimVelZ = 0;
-    const gravity = -CONFIG.movement.gravity;
-    const jumpForce = CONFIG.movement.jumpVelocity * 2;
-    let isGrounded = false;
-    const baseSpeed = CONFIG.movement.baseSpeed;
-    const sprintMultiplier = CONFIG.movement.sprintMultiplier;
-    const flyRiseSpeed = CONFIG.movement.flyRiseSpeed;
-    const flySlowSpeed = CONFIG.movement.flySlowSpeed;
-    const flyFastSpeed = CONFIG.movement.flyFastSpeed;
-    const flyMaxHeight = CONFIG.movement.flyMaxHeight;
     const camHeightOffset = CONFIG.camera.height;
 
     // ============================================
@@ -1065,11 +1052,22 @@
     // Movement key helpers from input system (WASD + Arrow keys)
     const { isKeyForward, isKeyBackward, isKeyLeft, isKeyRight, isAnyMovementKey } = inputSystem;
 
+    // ============================================
+    // Movement System (physics, swimming, flying)
+    // ============================================
+    const movementSystem = createMovementSystem(inputSystem);
+
+    // ============================================
+    // Day/Night System
+    // ============================================
+    const dayNightSystem = createDayNightSystem();
+
     // Save all state periodically (every 2 seconds)
     setInterval(() => {
       localStorage.setItem('ovgrid_avatar_position', JSON.stringify(charPos));
       localStorage.setItem('ovgrid_avatar_rotation', charRotation.toString());
       inputSystem.saveCameraState();
+      dayNightSystem.saveState();
     }, 2000);
 
     // Save all state on page unload
@@ -1077,6 +1075,7 @@
       localStorage.setItem('ovgrid_avatar_position', JSON.stringify(charPos));
       localStorage.setItem('ovgrid_avatar_rotation', charRotation.toString());
       inputSystem.saveCameraState();
+      dayNightSystem.saveState();
     });
 
     // ============================================
@@ -1093,36 +1092,11 @@
     // ============================================
     let lastT = performance.now(), totalT = 0, frames = 0, fps = 0, fpsT = 0;
     
-    // Time control state - restore from localStorage
-    const savedAutoTime = localStorage.getItem('ovgrid-auto-time');
-    const savedDayTime = localStorage.getItem('ovgrid-day-time');
-    let isTimeAuto = savedAutoTime !== null ? savedAutoTime === 'true' : true;
-    let dayTime = savedDayTime !== null ? parseFloat(savedDayTime) : 0;
-    
-    // Time control UI
-    const timeControlsEl = document.getElementById('time-controls');
-    const autoTimeCheckbox = document.getElementById('auto-time');
-    const timeSlider = document.getElementById('time-slider');
-    const timeDisplay = document.getElementById('time-display'); // New display in controls
-    
-    // Restore UI state from saved values
-    autoTimeCheckbox.checked = isTimeAuto;
-    if (!isTimeAuto) {
-      const pct = (dayTime / DAY_CYCLE_DURATION) * 100;
-      timeSlider.value = pct;
-    }
-    
-    autoTimeCheckbox.addEventListener('change', (e) => {
-      isTimeAuto = e.target.checked;
-      localStorage.setItem('ovgrid-auto-time', isTimeAuto);
-    });
-    
-    timeSlider.addEventListener('input', (e) => {
-      if (!isTimeAuto) {
-        const pct = parseFloat(e.target.value);
-        dayTime = (pct / 100) * DAY_CYCLE_DURATION;
-        localStorage.setItem('ovgrid-day-time', dayTime);
-      }
+    // Initialize day/night UI controls
+    dayNightSystem.initUI({
+      checkbox: document.getElementById('auto-time'),
+      slider: document.getElementById('time-slider'),
+      display: document.getElementById('time-display')
     });
 
     // Show UI
@@ -1135,14 +1109,8 @@
       lastT = now;
       totalT += dt;
       
-      // Update day time
-      if (isTimeAuto) {
-        dayTime += dt;
-        // Update slider
-        const cycleTime = dayTime % DAY_CYCLE_DURATION;
-        const pct = (cycleTime / DAY_CYCLE_DURATION) * 100;
-        timeSlider.value = pct;
-      }
+      // Update day/night cycle
+      const dayTime = dayNightSystem.update(dt);
 
       // Update weather system
       weatherSystem.update(dt, totalT);
@@ -1161,154 +1129,42 @@
       const camYaw = inputSystem.camYaw;
       const camPitch = inputSystem.camPitch;
       const camDistance = inputSystem.camDistance;
-      const fwdX = Math.sin(camYaw);
-      const fwdZ = Math.cos(camYaw);
-      const rightX = Math.cos(camYaw);
-      const rightZ = -Math.sin(camYaw);
+      const { fwdX, fwdZ, rightX, rightZ } = movementSystem.getCameraDirections(camYaw);
 
       // Sprint with Shift, Fly with F
       const isSprinting = keys['ShiftLeft'] || keys['ShiftRight'];
       const isCurrentlyFlying = keys['KeyF'];
 
-      // Speed depends on state:
-      // Flying + Shift = fast fly, Flying = slow fly, Sprinting = run, Swimming = slow, else = walk
-      let speed = baseSpeed;
-      let isSprintFlying = false;  // Track if we're fast-flying
-
       // Check if currently underwater for speed adjustment
-      const waterLevel = CONFIG.world.waterLevel;
+      const waterLevel = movementSystem.waterLevel;
       const currentlyUnderwater = charPos.y < waterLevel;
 
-      if (isCurrentlyFlying) {
-        if (isSprinting) {
-          speed = flyFastSpeed;   // Fast flying (F + Shift + WASD)
-          isSprintFlying = true;
-        } else {
-          speed = flySlowSpeed;   // Slow flying (F + WASD)
-        }
-      } else if (currentlyUnderwater) {
-        // Swimming speed (slower than walking)
-        const sw = CONFIG.swimming;
-        speed = isSprinting ? sw.swimSpeed * sw.swimSprintMultiplier : sw.swimSpeed;
-      } else if (isSprinting) {
-        speed = baseSpeed * sprintMultiplier;  // Running on ground
-      }
+      // Calculate speed based on state
+      const speed = movementSystem.calculateSpeed(isCurrentlyFlying, currentlyUnderwater, isSprinting);
 
-      // Movement input (A = left, D = right relative to camera)
+      // Movement input
       let moveX = 0, moveZ = 0, moveY = 0;
 
-      // Determine if deep enough to swim (water must cover avatar by swimDepthThreshold)
-      const swimDepthThreshold = CONFIG.swimming.swimDepthThreshold;
-      const waterDepthAtAvatar = waterLevel - gpuTerrainHeight;  // How deep is water at current position
-      const isDeepEnoughToSwim = currentlyUnderwater && (waterLevel - charPos.y) > swimDepthThreshold;
+      // Check if deep enough to swim
+      const isDeepEnoughToSwim = movementSystem.canSwim(charPos, gpuTerrainHeight);
 
       // Swimming: Full 3D movement based on camera direction (only when deep enough)
-      if (isDeepEnoughToSwim && !keys['KeyF']) {
-        const sw = CONFIG.swimming;
-        // Calculate 3D forward direction based on camera yaw AND pitch
-        // camPitch: negative = looking up, positive = looking down
-        const cosPitch = Math.cos(camPitch);
-        const sinPitch = Math.sin(camPitch);
-
-        // 3D forward vector (where camera is looking)
-        // INVERTED: sinPitch instead of -sinPitch so looking up goes up
-        const fwd3dX = fwdX * cosPitch;
-        const fwd3dZ = fwdZ * cosPitch;
-        const fwd3dY = sinPitch;  // Looking up (negative pitch) = swim up, looking down = swim down
-
-        // Check if sprinting while swimming
-        const isSprintSwimmingNow = keys['ShiftLeft'] || keys['ShiftRight'];
-
-        // Swimming acceleration - faster when sprinting
-        const swimAccel = isSprintSwimmingNow ? sw.swimSprintAccel : sw.swimAccel;
-        const swimDrag = sw.drag;    // Water resistance (higher = stops faster)
-
-        // Apply swimming speed - significantly faster with Shift
-        const targetSwimSpeed = isSprintSwimmingNow
-          ? sw.swimSpeed * sw.swimSprintMultiplier
-          : sw.swimSpeed;
-
-        // W/Arrow = swim forward in camera direction (full 3D)
-        if (isKeyForward()) {
-          swimVelX += fwd3dX * swimAccel * dt;
-          swimVelZ += fwd3dZ * swimAccel * dt;
-          swimVelY += fwd3dY * swimAccel * dt;
-        }
-        // S/Arrow = sink down (simple downward movement)
-        if (isKeyBackward()) {
-          swimVelY -= swimAccel * dt;
-        }
-        // A/D/Arrows = strafe left/right (horizontal only)
-        if (isKeyLeft()) {
-          swimVelX += rightX * swimAccel * dt;
-          swimVelZ += rightZ * swimAccel * dt;
-        }
-        if (isKeyRight()) {
-          swimVelX -= rightX * swimAccel * dt;
-          swimVelZ -= rightZ * swimAccel * dt;
-        }
-
-        // Apply water drag (inertia) - velocity decreases over time
-        const dragFactor = Math.exp(-swimDrag * dt);
-        swimVelX *= dragFactor;
-        swimVelY *= dragFactor;
-        swimVelZ *= dragFactor;
-
-        // Clamp velocity to max swim speed
-        const currentSpeed = Math.sqrt(swimVelX * swimVelX + swimVelY * swimVelY + swimVelZ * swimVelZ);
-        if (currentSpeed > targetSwimSpeed) {
-          const scale = targetSwimSpeed / currentSpeed;
-          swimVelX *= scale;
-          swimVelY *= scale;
-          swimVelZ *= scale;
-        }
-
-        // Apply velocity to position
-        charPos.x += swimVelX * dt;
-        charPos.z += swimVelZ * dt;
-        charPos.y += swimVelY * dt;
-
-        // Set target rotation to face horizontal movement direction
-        if (Math.abs(swimVelX) > 0.1 || Math.abs(swimVelZ) > 0.1) {
-          charTargetRotation = Math.atan2(swimVelX, swimVelZ);
-        }
-
-        // Track movement for animation
-        moveX = swimVelX;
-        moveZ = swimVelZ;
-        moveY = swimVelY;
-
-        // Clamp to water boundaries
-        if (charPos.y > waterLevel) {
-          charPos.y = waterLevel;
-          swimVelY = 0;
-        }
-        if (charPos.y < gpuTerrainHeight) {
-          charPos.y = gpuTerrainHeight;
-          swimVelY = 0;
+      if (isDeepEnoughToSwim && !isCurrentlyFlying) {
+        const result = movementSystem.updateSwimming(charPos, dt, camYaw, camPitch, gpuTerrainHeight);
+        moveX = result.moveX;
+        moveY = result.moveY;
+        moveZ = result.moveZ;
+        if (result.charTargetRotation !== null) {
+          charTargetRotation = result.charTargetRotation;
         }
       }
       // Normal ground/air movement (including shallow water walking)
-      else {
-        // Reset swim velocity when not swimming
-        swimVelX = 0;
-        swimVelY = 0;
-        swimVelZ = 0;
-
-        if (isKeyForward()) { moveX += fwdX; moveZ += fwdZ; }
-        if (isKeyBackward()) { moveX -= fwdX; moveZ -= fwdZ; }
-        if (isKeyLeft()) { moveX += rightX; moveZ += rightZ; }
-        if (isKeyRight()) { moveX -= rightX; moveZ -= rightZ; }
-
-        // Normalize and apply movement to character
-        const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
-        if (moveLen > 0.001) {
-          moveX /= moveLen;
-          moveZ /= moveLen;
-          charPos.x += moveX * speed * dt;
-          charPos.z += moveZ * speed * dt;
-          // Set target rotation to face movement direction
-          charTargetRotation = Math.atan2(moveX, moveZ);
+      else if (!isCurrentlyFlying) {
+        const result = movementSystem.updateGroundMovement(charPos, dt, camYaw, speed);
+        moveX = result.moveX;
+        moveZ = result.moveZ;
+        if (result.charTargetRotation !== null) {
+          charTargetRotation = result.charTargetRotation;
         }
       }
 
@@ -1316,68 +1172,11 @@
       const isMoving = Math.abs(moveX) > 0.001 || Math.abs(moveZ) > 0.001 || Math.abs(moveY) > 0.001;
 
       // Smoothly interpolate character rotation towards target
-      let rotationDiff = charTargetRotation - charRotation;
-      // Handle wrap-around (e.g., from -PI to PI)
-      while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
-      while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
-      charRotation += rotationDiff * Math.min(1, rotationSmoothing * dt);
+      charRotation = movementSystem.smoothRotation(charRotation, charTargetRotation, dt);
 
-      // Flying with F - 3D movement like swimming (camera direction controls up/down)
-      if (keys['KeyF']) {
-        // Calculate 3D forward direction based on camera yaw AND pitch (same as swimming)
-        const flyCosPitch = Math.cos(camPitch);
-        const flySinPitch = Math.sin(camPitch);
-
-        // 3D forward vector (where camera is looking)
-        const flyFwd3dX = fwdX * flyCosPitch;
-        const flyFwd3dZ = fwdZ * flyCosPitch;
-        const flyFwd3dY = flySinPitch;  // Looking up = fly up, looking down = fly down
-
-        // Check if sprinting while flying
-        const isSprintFlying = keys['ShiftLeft'] || keys['ShiftRight'];
-        const currentFlySpeed = isSprintFlying ? flyFastSpeed : flySlowSpeed;
-
-        // Apply movement based on camera direction
-        if (isKeyForward()) {
-          // Fly forward in camera direction (3D)
-          charPos.x += flyFwd3dX * currentFlySpeed * dt;
-          charPos.z += flyFwd3dZ * currentFlySpeed * dt;
-          charPos.y += flyFwd3dY * currentFlySpeed * dt;
-        }
-        if (isKeyBackward()) {
-          // Fly backward (opposite to camera direction)
-          charPos.x -= flyFwd3dX * currentFlySpeed * dt;
-          charPos.z -= flyFwd3dZ * currentFlySpeed * dt;
-          charPos.y -= flyFwd3dY * currentFlySpeed * dt;
-        }
-        // Strafe left/right (horizontal only)
-        if (isKeyLeft()) {
-          charPos.x += rightX * currentFlySpeed * dt;
-          charPos.z += rightZ * currentFlySpeed * dt;
-        }
-        if (isKeyRight()) {
-          charPos.x -= rightX * currentFlySpeed * dt;
-          charPos.z -= rightZ * currentFlySpeed * dt;
-        }
-
-        // When no movement keys, slowly rise (default F behavior)
-        if (!isKeyForward() && !isKeyBackward() && !isKeyLeft() && !isKeyRight()) {
-          charPos.y += flyRiseSpeed * dt;
-        }
-
-        // Height limits
-        if (charPos.y > flyMaxHeight) {
-          charPos.y = flyMaxHeight;
-        }
-
-        velocityY = 0;
-
-        // Auto-elevate when hitting terrain while flying
-        // Keep avatar at least 1 meter above ground
-        const minFlyHeight = gpuTerrainHeight + 1.0;
-        if (charPos.y < minFlyHeight) {
-          charPos.y = minFlyHeight;
-        }
+      // Flying with F - 3D movement like swimming
+      if (isCurrentlyFlying) {
+        movementSystem.updateFlying(charPos, dt, camYaw, camPitch, gpuTerrainHeight);
       }
 
       // Use GPU-computed terrain height for physics (exact match with visual)
@@ -1419,77 +1218,16 @@
       const isUnderwater = charPos.y < waterLevel;
       const waterDepth = waterLevel - charPos.y;  // How deep underwater
 
-      // Physics only on terrain - water has no collision
-      // Avatar can go underwater if terrain is below water level
-      const groundLevel = terrainHeight;
-      isGrounded = charPos.y <= groundLevel + CONFIG.character.groundedThreshold;
-
-      // Swimming physics when deep enough underwater (only applies when NOT actively swimming with WASD)
-      if (isDeepEnoughToSwim && !keys['KeyF']) {
-        const sw = CONFIG.swimming;
-
-        // When entering water, immediately reduce falling velocity
-        if (velocityY < -sw.sinkSpeed) {
-          velocityY = -sw.sinkSpeed;  // Cap falling speed in water
-        }
-
-        // Apply water drag (resistance) - slows down vertical movement
-        velocityY *= (1.0 - sw.drag * dt);
-
-        // Only apply passive physics if not actively moving with WASD/Arrow keys
-        const isActivelySwimming = isAnyMovementKey();
-        if (!isActivelySwimming) {
-          // Slight natural sinking when idle in water
-          velocityY -= sw.sinkSpeed * sw.idleSinkMultiplier * dt;
-        } else {
-          // When actively swimming, reduce passive velocity quickly
-          velocityY *= sw.activeVelocityDamping;
-        }
-
-        // Clamp velocity
-        velocityY = Math.max(-sw.sinkSpeed, Math.min(sw.riseSpeed, velocityY));
-
-        // Apply passive velocity (separate from active swimming movement)
-        charPos.y += velocityY * dt;
-
-        // Don't go below ground even underwater
-        if (charPos.y < groundLevel) {
-          charPos.y = groundLevel;
-          velocityY = 0;
-          isGrounded = true;
-        }
-
-        // Don't go above water surface
-        if (charPos.y > waterLevel) {
-          charPos.y = waterLevel;
-          velocityY = 0;
-        }
-      }
-      // Normal ground physics (not underwater, not flying)
-      else if (!keys['KeyF']) {
-        // Jump with Space (only on ground, not underwater)
-        if (keys['Space'] && isGrounded) {
-          velocityY = jumpForce;
-          isGrounded = false;
-        }
-
-        // Apply gravity
-        velocityY += gravity * dt;
-        charPos.y += velocityY * dt;
-
-        if (charPos.y < groundLevel) {
-          charPos.y = groundLevel;
-          velocityY = 0;
-          isGrounded = true;
-        }
-      }
+      // Update physics (gravity, jumping, swimming physics)
+      movementSystem.updatePhysics(charPos, dt, terrainHeight, isDeepEnoughToSwim, isCurrentlyFlying);
+      const isGrounded = movementSystem.isGrounded;
 
       // Update movement sounds
-      const isFlying = keys['KeyF'];
+      const isFlying = isCurrentlyFlying;
       const isSwimming = isDeepEnoughToSwim && !isFlying;  // Swimming only when deep enough and not flying
-      const isSprintSwimming = isSwimming && (keys['ShiftLeft'] || keys['ShiftRight']);  // Fast swimming with Shift
-      const isJumping = !isGrounded && velocityY > 0 && !isSwimming;
-      const isFalling = !isGrounded && velocityY < 0 && !isFlying && !isSwimming;
+      const isSprintSwimming = isSwimming && isSprinting;  // Fast swimming with Shift
+      const isJumping = !isGrounded && movementSystem.velocityY > 0 && !isSwimming;
+      const isFalling = !isGrounded && movementSystem.velocityY < 0 && !isFlying && !isSwimming;
       const inWater = terrainHeight < waterLevel && charPos.y < waterLevel + 1.0;
       soundSystem.updateMovementSounds(isMoving, isSprinting, isFlying, isJumping, inWater);
 
