@@ -1043,6 +1043,11 @@
         if (code === 'Digit5') weatherSystem.setWeather(5);  // Thunderstorm
         if (code === 'Digit6') weatherSystem.setWeather(6);  // Snow
         if (code === 'Digit0') weatherSystem.setWeather(0);  // Clear
+        // Toggle UI with H
+        if (code === 'KeyH') {
+          const controls = document.getElementById('controls');
+          controls.classList.toggle('hidden');
+        }
       }
     });
 
