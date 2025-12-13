@@ -1303,9 +1303,9 @@
       document.getElementById('position').textContent = `${charPos.x.toFixed(0)}, ${charPos.y.toFixed(0)}, ${charPos.z.toFixed(0)}`;
 
       // Time display synced with day/night cycle
-      // Uses getFormattedTime from lib/lighting.js
-      const formattedTime = getFormattedTime(dayTime, DAY_CYCLE_DURATION);
-      if (timeDisplay) timeDisplay.textContent = formattedTime;
+      const formattedTime = dayNightSystem.getFormattedTime();
+      const timeDisplayEl = document.getElementById('time-display');
+      if (timeDisplayEl) timeDisplayEl.textContent = formattedTime;
 
       // Matrices
       const proj = perspective(Math.PI / 3, canvas.width / canvas.height, 0.1, 15000);
