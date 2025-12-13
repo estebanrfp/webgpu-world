@@ -1059,6 +1059,9 @@
 
     // Alias for quick access
     const keys = inputSystem.keys;
+    
+    // Movement key helpers from input system (WASD + Arrow keys)
+    const { isKeyForward, isKeyBackward, isKeyLeft, isKeyRight, isAnyMovementKey } = inputSystem;
 
     // Save all state periodically (every 2 seconds)
     setInterval(() => {
@@ -1223,22 +1226,22 @@
           ? sw.swimSpeed * sw.swimSprintMultiplier
           : sw.swimSpeed;
 
-        // W = swim forward in camera direction (full 3D)
-        if (keys['KeyW']) {
+        // W/Arrow = swim forward in camera direction (full 3D)
+        if (isKeyForward()) {
           swimVelX += fwd3dX * swimAccel * dt;
           swimVelZ += fwd3dZ * swimAccel * dt;
           swimVelY += fwd3dY * swimAccel * dt;
         }
-        // S = sink down (simple downward movement)
-        if (keys['KeyS']) {
+        // S/Arrow = sink down (simple downward movement)
+        if (isKeyBackward()) {
           swimVelY -= swimAccel * dt;
         }
-        // A/D = strafe left/right (horizontal only)
-        if (keys['KeyA']) {
+        // A/D/Arrows = strafe left/right (horizontal only)
+        if (isKeyLeft()) {
           swimVelX += rightX * swimAccel * dt;
           swimVelZ += rightZ * swimAccel * dt;
         }
-        if (keys['KeyD']) {
+        if (isKeyRight()) {
           swimVelX -= rightX * swimAccel * dt;
           swimVelZ -= rightZ * swimAccel * dt;
         }
@@ -1290,10 +1293,10 @@
         swimVelY = 0;
         swimVelZ = 0;
 
-        if (keys['KeyW']) { moveX += fwdX; moveZ += fwdZ; }
-        if (keys['KeyS']) { moveX -= fwdX; moveZ -= fwdZ; }
-        if (keys['KeyA']) { moveX += rightX; moveZ += rightZ; }
-        if (keys['KeyD']) { moveX -= rightX; moveZ -= rightZ; }
+        if (isKeyForward()) { moveX += fwdX; moveZ += fwdZ; }
+        if (isKeyBackward()) { moveX -= fwdX; moveZ -= fwdZ; }
+        if (isKeyLeft()) { moveX += rightX; moveZ += rightZ; }
+        if (isKeyRight()) { moveX -= rightX; moveZ -= rightZ; }
 
         // Normalize and apply movement to character
         const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
@@ -1333,30 +1336,30 @@
         const currentFlySpeed = isSprintFlying ? flyFastSpeed : flySlowSpeed;
 
         // Apply movement based on camera direction
-        if (keys['KeyW']) {
+        if (isKeyForward()) {
           // Fly forward in camera direction (3D)
           charPos.x += flyFwd3dX * currentFlySpeed * dt;
           charPos.z += flyFwd3dZ * currentFlySpeed * dt;
           charPos.y += flyFwd3dY * currentFlySpeed * dt;
         }
-        if (keys['KeyS']) {
+        if (isKeyBackward()) {
           // Fly backward (opposite to camera direction)
           charPos.x -= flyFwd3dX * currentFlySpeed * dt;
           charPos.z -= flyFwd3dZ * currentFlySpeed * dt;
           charPos.y -= flyFwd3dY * currentFlySpeed * dt;
         }
         // Strafe left/right (horizontal only)
-        if (keys['KeyA']) {
+        if (isKeyLeft()) {
           charPos.x += rightX * currentFlySpeed * dt;
           charPos.z += rightZ * currentFlySpeed * dt;
         }
-        if (keys['KeyD']) {
+        if (isKeyRight()) {
           charPos.x -= rightX * currentFlySpeed * dt;
           charPos.z -= rightZ * currentFlySpeed * dt;
         }
 
         // When no movement keys, slowly rise (default F behavior)
-        if (!keys['KeyW'] && !keys['KeyS'] && !keys['KeyA'] && !keys['KeyD']) {
+        if (!isKeyForward() && !isKeyBackward() && !isKeyLeft() && !isKeyRight()) {
           charPos.y += flyRiseSpeed * dt;
         }
 
@@ -1431,8 +1434,8 @@
         // Apply water drag (resistance) - slows down vertical movement
         velocityY *= (1.0 - sw.drag * dt);
 
-        // Only apply passive physics if not actively moving with WASD
-        const isActivelySwimming = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+        // Only apply passive physics if not actively moving with WASD/Arrow keys
+        const isActivelySwimming = isAnyMovementKey();
         if (!isActivelySwimming) {
           // Slight natural sinking when idle in water
           velocityY -= sw.sinkSpeed * sw.idleSinkMultiplier * dt;
