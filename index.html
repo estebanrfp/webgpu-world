@@ -29,29 +29,13 @@
       height: 100%;
     }
 
-    #ui {
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      color: white;
-      background: rgba(0, 0, 0, 0.4);
-      padding: 12px 16px;
-      border-radius: 12px;
-      font-size: 13px;
-      backdrop-filter: blur(8px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      z-index: 100;
+    #controls .stats-group {
+      font-size: 10px;
+      opacity: 0.7;
     }
 
-    #ui h1 {
-      font-size: 16px;
-      margin-bottom: 10px;
-      color: #4fc3f7;
-    }
-
-    #ui p {
+    #controls .stats-group p {
       margin: 3px 0;
-      opacity: 0.9;
     }
 
     #controls {
@@ -92,24 +76,15 @@
     }
 
     #time-controls {
-      position: fixed;
-      top: 15px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.4);
-      padding: 6px 12px;
-      border-radius: 15px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       color: white;
-      z-index: 100;
-      backdrop-filter: blur(8px);
-      border: 1px solid rgba(255, 255, 255, 0.08);
+      margin-bottom: 8px;
     }
     
     #time-slider {
-      width: 120px;
+      flex: 1;
       height: 4px;
       cursor: pointer;
       -webkit-appearance: none;
@@ -236,30 +211,27 @@
 
   <canvas id="canvas"></canvas>
 
-  <div id="ui" class="hidden">
-    <h1>🌍 OVGRID</h1>
-    <p>FPS: <span id="fps">0</span></p>
-    <p>Position: <span id="position">0, 50, 0</span></p>
-  </div>
-
-  <div id="time-controls" class="hidden">
-    <label class="toggle-switch" title="Auto Cycle">
-      <input type="checkbox" id="auto-time" checked>
-      <span class="toggle-slider"></span>
-    </label>
-    <input type="range" id="time-slider" min="0" max="100" value="0" step="0.1">
-    <span id="time-display" class="time-label">00:00</span>
-  </div>
-
   <div id="controls" class="hidden">
     <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</p>
     <p><kbd>Space</kbd> Jump</p>
     <p><kbd>F</kbd> Fly <span style="opacity:0.6; font-size:10px">(look up/down)</span></p>
     <p><kbd>Shift</kbd> Sprint</p>
     <div class="control-group">
+      <div id="time-controls">
+        <label class="toggle-switch" title="Auto Cycle">
+          <input type="checkbox" id="auto-time" checked>
+          <span class="toggle-slider"></span>
+        </label>
+        <input type="range" id="time-slider" min="0" max="100" value="0" step="0.1">
+        <span id="time-display" class="time-label">00:00</span>
+      </div>
       <p><kbd>1</kbd><kbd>2</kbd> Clouds · <kbd>0</kbd> Clear</p>
       <p><kbd>3</kbd> Rain · <kbd>4</kbd> Heavy · <kbd>5</kbd> Storm</p>
       <p><kbd>6</kbd> Snow</p>
+    </div>
+    <div class="control-group stats-group">
+      <p>FPS: <span id="fps">0</span></p>
+      <p>Position: <span id="position">0, 50, 0</span></p>
     </div>
   </div>
 
@@ -341,7 +313,6 @@
     const loadingEl = document.getElementById('loading');
     const errorEl = document.getElementById('error');
     const errorMsg = document.getElementById('error-msg');
-    const uiEl = document.getElementById('ui');
     const controlsEl = document.getElementById('controls');
 
     function showError(msg) {
@@ -1117,8 +1088,6 @@
       timeSlider.value = pct;
     }
     
-    timeControlsEl.classList.remove('hidden');
-    
     autoTimeCheckbox.addEventListener('change', (e) => {
       isTimeAuto = e.target.checked;
       localStorage.setItem('ovgrid-auto-time', isTimeAuto);
@@ -1134,7 +1103,6 @@
 
     // Show UI
     loadingEl.classList.add('hidden');
-    uiEl.classList.remove('hidden');
     controlsEl.classList.remove('hidden');
 
     function render() {
