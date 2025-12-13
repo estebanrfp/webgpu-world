@@ -305,6 +305,7 @@
       createSoundSystem,
       createCharacterSystem,
       createNPCSystem,
+      createNameplateSystem,
     } from './lib/index.js';
 
     // Make config globally accessible for debugging/tweaking
@@ -508,6 +509,24 @@
     });
     // Start loading NPCs asynchronously
     npcSystem.init();
+
+    // ============================================
+    // Nameplate System - Canvas2D rendered nameplates (Orillusion-style)
+    // ============================================
+    const nameplateSystem = createNameplateSystem(device, {
+      cameraBuffer,
+      maxEntities: CONFIG.npc.count + 1, // NPCs + player
+    });
+
+    function formatState(state) {
+      switch (state) {
+        case 'idle': return 'Quieto';
+        case 'walking': return 'Caminando';
+        case 'running': return 'Corriendo';
+        case 'following': return 'Following';
+        default: return state ? String(state) : '';
+      }
+    }
 
     // ============================================
     // Geometry Generation (using lib/geometry.js)
@@ -1474,6 +1493,47 @@
         // Use accurate terrain height calculation (matches shader)
         npcSystem.update(dt, charPos.x, charPos.y, charPos.z, getTerrainHeightAt);
         npcSystem.updateUniforms(CONFIG.character.scale);  // Fixed: was modelScale (undefined)
+        
+        // Update HUD for NPCs (billboard nameplates)
+        const npcs = npcSystem.getNPCs();
+        const cameraPos = [charPos.x, charPos.y + characterHeight, charPos.z];
+        
+        // Include player avatar in HUD list
+        const playerAvatar = {
+          x: charPos.x,
+          y: charPos.y,
+          z: charPos.z,
+          color: '#4ff3ff',
+          health: 1.0,
+          energy: 0.85,
+          state: isSprinting ? 'running' : (isMoving ? 'walking' : 'idle')
+        };
+        const allCharacters = [playerAvatar, ...npcs];
+        
+        // Update nameplate system with all entities
+        // Generate unique colors for each avatar using HSL
+        const nameplateEntities = allCharacters.map((entity, index) => {
+          let accentColor;
+          if (index === 0) {
+            // Player: cyan
+            accentColor = '#4ff3ff';
+          } else {
+            // NPCs: unique color based on index using golden ratio for good distribution
+            const hue = (index * 137.508) % 360; // Golden angle for even distribution
+            accentColor = `hsl(${hue}, 70%, 55%)`;
+          }
+          return {
+            id: entity.name || 'player',
+            name: entity.name || 'Player',
+            status: formatState(entity.state),
+            x: entity.x,
+            y: entity.y,
+            z: entity.z,
+            health: entity.health || 1.0,
+            color: accentColor,
+          };
+        });
+        nameplateSystem.update(nameplateEntities, cameraPos);
       }
 
       // === Third Person Camera ===
@@ -1809,6 +1869,9 @@
       // Render NPCs
       if (npcSystem.isReady()) {
         npcSystem.render(opaquePass, characterPipeline);
+        
+        // Render nameplates (Canvas2D billboards above characters)
+        nameplateSystem.render(opaquePass);
       }
 
       opaquePass.end();
