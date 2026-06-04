@@ -99,7 +99,7 @@ webgpu-world/
 Almost all tuning lives in [`lib/core/config.js`](lib/core/config.js): island size & height, water
 appearance, weather presets, movement and swimming, day/night timing, avatar look, audio. The island
 shape itself is the `getHeight` function, duplicated **identically** across `terrain.wgsl.js`,
-`compute.wgsl.js`, `shadow.wgsl.js`, `oceanShader.wgsl.js` and `math.js` — change all five together.
+`shadow.wgsl.js`, `oceanShader.wgsl.js` and `math.js` — change all four together.
 
 ## Requirements
 
@@ -115,7 +115,7 @@ shape itself is the `getHeight` function, duplicated **identically** across `ter
 
 ## License
 
-MIT.
+MIT — see [LICENSE](LICENSE).
 
 ## Author
 
