@@ -1,7 +1,7 @@
 {
-  "name": "ovgrid-webgpu",
+  "name": "webgpu-world",
   "version": "2.0.0",
-  "description": "OVGrid WebGPU - Native WebGPU implementation with procedural sky, terrain, ocean and dynamic weather",
+  "description": "WebGPU World - A native-WebGPU virtual world (proof of concept): procedural sky, bounded island terrain, ocean, weather, runtime voxel avatars and NPCs - no 3D engine",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -23,6 +23,6 @@
     "virtual-world",
     "native"
   ],
-  "author": "",
+  "author": "Esteban Fuster Pozzi (@estebanrfp)",
   "license": "MIT"
 }
