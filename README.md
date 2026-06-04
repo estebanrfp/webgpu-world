@@ -1,4 +1,4 @@
-# OVGrid WebGPU — a native-WebGPU virtual world (proof of concept)
+# WebGPU World — a native-WebGPU virtual world (proof of concept)
 
 **The objective of this repository** is to answer one question: *can a complete, self-contained 3-D
 virtual world — terrain, ocean, sky, weather, animated avatars, an NPC crowd and physics — be built
@@ -73,7 +73,7 @@ pnpm preview
 ## Project layout
 
 ```
-ovgrid-webgpu/
+webgpu-world/
 ├── index.html              # Main app: GPU setup, pipelines, render loop
 ├── lib/
 │   ├── core/               # config.js (all tuning), WebGPU bootstrap, uniform writers
