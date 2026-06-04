@@ -214,7 +214,7 @@
   <div id="controls" class="hidden">
     <p><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Move</p>
     <p><kbd>Space</kbd> Jump</p>
-    <p><kbd>F</kbd> Fly <span style="opacity:0.6; font-size:10px">(look up/down)</span></p>
+    <p><kbd>Q</kbd> Fly <span style="opacity:0.6; font-size:10px">(look up/down)</span></p>
     <p><kbd>Shift</kbd> Sprint</p>
     <div class="control-group">
       <div id="time-controls">
@@ -283,7 +283,6 @@
       underwaterShader,
       godRaysShader,
       bubblesShader,
-      terrainHeightComputeShader,
       // Geometry
       createPlaneGeometry,
       createGeometryBuffers,
@@ -600,9 +599,6 @@
     // [Character shader moved to lib/shaders/character.wgsl.js]
     // characterShader is imported from lib/index.js
 
-    // [Compute shader moved to lib/shaders/compute.wgsl.js]
-    // terrainHeightComputeShader is imported from lib/index.js
-
     // ============================================
     // Create Pipelines
     // ============================================
@@ -689,15 +685,17 @@
       ],
     };
 
-    // Character vertex layout (pos, normal, uv, joints, weights = 16 floats = 64 bytes)
+    // Character vertex layout (pos, normal, uv, joints, weights, color = 19 floats = 76 bytes).
+    // The voxel avatar is textureless: per-vertex flat colour at location 5.
     const characterVertexLayout = {
-      arrayStride: 64,
+      arrayStride: 76,
       attributes: [
         { shaderLocation: 0, offset: 0, format: 'float32x3' },   // position
         { shaderLocation: 1, offset: 12, format: 'float32x3' },  // normal
         { shaderLocation: 2, offset: 24, format: 'float32x2' },  // uv
         { shaderLocation: 3, offset: 32, format: 'float32x4' },  // joints
         { shaderLocation: 4, offset: 48, format: 'float32x4' },  // weights
+        { shaderLocation: 5, offset: 64, format: 'float32x3' },  // per-vertex flat colour (voxel)
       ],
     };
 
@@ -796,50 +794,10 @@
     });
 
 
-    // ============================================
-    // Terrain Height Compute Pipeline (GPU physics)
-    // ============================================
-    const terrainHeightComputeModule = device.createShaderModule({ code: terrainHeightComputeShader });
-
-    const terrainHeightComputeLayout = device.createBindGroupLayout({
-      entries: [
-        { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-        { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-      ],
-    });
-
-    const terrainHeightComputePipeline = device.createComputePipeline({
-      layout: device.createPipelineLayout({ bindGroupLayouts: [terrainHeightComputeLayout] }),
-      compute: { module: terrainHeightComputeModule, entryPoint: 'main' },
-    });
-
-    // Buffers for terrain height compute
-    const terrainHeightInputBuffer = device.createBuffer({
-      size: 8, // 2 floats (posX, posZ)
-      usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-    });
-
-    const terrainHeightOutputBuffer = device.createBuffer({
-      size: 4, // 1 float (height)
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-    });
-
-    const terrainHeightReadBuffer = device.createBuffer({
-      size: 4,
-      usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-    });
-
-    const terrainHeightBindGroup = device.createBindGroup({
-      layout: terrainHeightComputeLayout,
-      entries: [
-        { binding: 0, resource: { buffer: terrainHeightInputBuffer } },
-        { binding: 1, resource: { buffer: terrainHeightOutputBuffer } },
-      ],
-    });
-
-    // Variable to store the GPU-computed terrain height
+    // Player terrain height — sampled on the CPU each frame via getTerrainHeightAt (math.js), which
+    // mirrors the shader's getHeight, so the avatar walks exactly on the visible ground. No GPU
+    // readback / compute pass is needed for physics.
     let gpuTerrainHeight = 0;
-    let gpuTerrainHeightPending = false;
 
     // ============================================
     // Volumetric God Rays Pipeline (3D light shafts)
@@ -1020,9 +978,18 @@
     // Load saved state from localStorage or use defaults
     const savedPosition = localStorage.getItem('ovgrid_avatar_position');
     const savedRotation = localStorage.getItem('ovgrid_avatar_rotation');
-    let charPos = savedPosition
-      ? JSON.parse(savedPosition)
-      : { ...CONFIG.character.spawnPosition };
+    // Bounded world: ignore any stale / out-of-bounds saved position (e.g. a far or high spot
+    // persisted before the island existed) so we never respawn into the jittery far coordinates.
+    let charPos = { ...CONFIG.character.spawnPosition };
+    if (savedPosition) {
+      try {
+        const p = JSON.parse(savedPosition);
+        if (Number.isFinite(p?.x) && Number.isFinite(p?.y) && Number.isFinite(p?.z) &&
+            Math.abs(p.x) <= 1700 && Math.abs(p.z) <= 1700 && p.y < 500) {
+          charPos = p;
+        }
+      } catch (e) { /* corrupt save — keep spawn default */ }
+    }
 
     let charRotation = savedRotation ? parseFloat(savedRotation) : 0;  // Character facing direction (yaw)
     let charTargetRotation = charRotation;  // Target rotation for smooth interpolation
@@ -1136,9 +1103,9 @@
       const camDistance = inputSystem.camDistance;
       const { fwdX, fwdZ, rightX, rightZ } = movementSystem.getCameraDirections(camYaw);
 
-      // Sprint with Shift, Fly with F
+      // Sprint with Shift, Fly with Q
       const isSprinting = keys['ShiftLeft'] || keys['ShiftRight'];
-      const isCurrentlyFlying = keys['KeyF'];
+      const isCurrentlyFlying = keys['KeyQ'];
 
       // Check if currently underwater for speed adjustment
       const waterLevel = movementSystem.waterLevel;
@@ -1184,36 +1151,9 @@
         movementSystem.updateFlying(charPos, dt, camYaw, camPitch, gpuTerrainHeight);
       }
 
-      // Use GPU-computed terrain height for physics (exact match with visual)
-      // Queue compute shader to calculate terrain height for next frame
-      if (!gpuTerrainHeightPending) {
-        gpuTerrainHeightPending = true;
-
-        // Write character position to input buffer
-        device.queue.writeBuffer(terrainHeightInputBuffer, 0, new Float32Array([charPos.x, charPos.z]));
-
-        // Execute compute shader
-        const computeEncoder = device.createCommandEncoder();
-        const computePass = computeEncoder.beginComputePass();
-        computePass.setPipeline(terrainHeightComputePipeline);
-        computePass.setBindGroup(0, terrainHeightBindGroup);
-        computePass.dispatchWorkgroups(1);
-        computePass.end();
-
-        // Copy result to readable buffer
-        computeEncoder.copyBufferToBuffer(terrainHeightOutputBuffer, 0, terrainHeightReadBuffer, 0, 4);
-        device.queue.submit([computeEncoder.finish()]);
-
-        // Read result asynchronously
-        terrainHeightReadBuffer.mapAsync(GPUMapMode.READ).then(() => {
-          const data = new Float32Array(terrainHeightReadBuffer.getMappedRange());
-          gpuTerrainHeight = data[0];
-          terrainHeightReadBuffer.unmap();
-          gpuTerrainHeightPending = false;
-        }).catch(() => {
-          gpuTerrainHeightPending = false;
-        });
-      }
+      // Island physics height — CPU getTerrainHeightAt mirrors the terrain shader's getHeight, so the
+      // player walks exactly on the visible ground (no GPU readback / compute pass needed).
+      gpuTerrainHeight = getTerrainHeightAt(charPos.x, charPos.z);
 
       // Use GPU terrain height for physics (defaults to 0 on first frame)
       const terrainHeight = gpuTerrainHeight;
@@ -1225,6 +1165,12 @@
 
       // Update physics (gravity, jumping, swimming physics)
       movementSystem.updatePhysics(charPos, dt, terrainHeight, isDeepEnoughToSwim, isCurrentlyFlying);
+
+      // Bounded world — the procedural island lives within a radius of ~500. Keep the player inside
+      // ±600 (island + a little sea) so we never reach the large coordinates that would jitter.
+      charPos.x = Math.max(-600, Math.min(600, charPos.x));
+      charPos.z = Math.max(-600, Math.min(600, charPos.z));
+
       const isGrounded = movementSystem.isGrounded;
 
       // Update movement sounds
@@ -1507,7 +1453,7 @@
       shadowPass.setBindGroup(0, shadowTerrainBG);
       shadowPass.setVertexBuffer(0, terrainVB);
       shadowPass.setIndexBuffer(terrainIB, 'uint32');
-      shadowPass.drawIndexed(terrain.indices.length);
+      shadowPass.drawIndexed(terrainBuffers.indexCount);
 
       // Render character to shadow map (if ready)
       if (characterSystem.avatarLoaded && characterSystem.avatarVB && characterSystem.avatarIB && characterSystem.boneMatricesBuffer && shadowCharacterBG) {
@@ -1566,7 +1512,7 @@
       opaquePass.setBindGroup(0, terrainBG);
       opaquePass.setVertexBuffer(0, terrainVB);
       opaquePass.setIndexBuffer(terrainIB, 'uint32');
-      opaquePass.drawIndexed(terrain.indices.length);
+      opaquePass.drawIndexed(terrainBuffers.indexCount);
 
       // Character (avatar) - Rendered BEFORE ocean so depth buffer has character data
       if (characterSystem.avatarLoaded && characterSystem.avatarVB && characterSystem.avatarIB && characterSystem.avatarTexture && characterSystem.avatarSampler && characterSystem.boneMatricesBuffer) {

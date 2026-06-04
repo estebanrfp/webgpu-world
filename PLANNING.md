@@ -1,4 +1,4 @@
-Quiero que me generes **la estructura base de un proyecto WebGPU usando TypeGPU** en TypeScript para un mundo virtual completo con las siguientes características:
+Quiero que me generes **la estructura base de un proyecto WebGPU usando WebGPU nativo** en Javascript puro para un mundo virtual completo con las siguientes características:
 
 1. **Cielo procedural volumétrico**  
    - cielo dinámico con fases de día: amanecer, día, atardecer, noche.  
