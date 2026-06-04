@@ -5,12 +5,19 @@ virtual world — terrain, ocean, sky, weather, animated avatars, an NPC crowd a
 **directly on the native WebGPU API**, with hand-written WGSL and **no high-level 3-D engine** (no
 Three.js, Babylon or Orillusion)?*
 
-It is one of **two technology explorations** behind [OVGrid](https://github.com/estebanrfp/ovgrid):
-this one takes the **from-scratch / native WebGPU** path; a sibling experiment builds the same kind
-of world on the **Orillusion** engine. The point is to learn the raw API, compare the two
-approaches, and keep a clean, readable reference for WebGPU world rendering.
-
 > Everything runs in the browser on WebGPU — no install, no account, no backend, no external services.
+
+## Two worlds, two techniques
+
+`webgpu-world` and [`orillusion-world`](https://github.com/estebanrfp/orillusion-world) are sibling
+proofs of concept: the **same** idea — a browser-based 3-D virtual world with terrain/scene,
+day-night, weather, ocean, animated avatars and NPCs — built **two different ways**, so the
+approaches can be compared side by side.
+
+- **[webgpu-world](https://github.com/estebanrfp/webgpu-world)** *(this repo)* — built directly on
+  the **native WebGPU API**, hand-written WGSL, **no engine**.
+- **[orillusion-world](https://github.com/estebanrfp/orillusion-world)** — the same kind of world
+  built on the **[Orillusion](https://www.orillusion.com/)** WebGPU engine.
 
 ## What's in the world
 
