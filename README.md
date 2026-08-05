@@ -1,5 +1,9 @@
 # WebGPU World — a native-WebGPU virtual world (proof of concept)
 
+### ▶ [Walk around it in your browser](https://estebanrfp.github.io/webgpu-world/)
+
+*Chromium-based browser with WebGPU. WASD to move, Q to fly, walk into the sea to swim, `0`–`6` for the weather.*
+
 **The objective of this repository** is to answer one question: *can a complete, self-contained 3-D
 virtual world — terrain, ocean, sky, weather, animated avatars, an NPC crowd and physics — be built
 **directly on the native WebGPU API**, with hand-written WGSL and **no high-level 3-D engine** (no
