@@ -1,5 +1,7 @@
 # WebGPU World — a native-WebGPU virtual world (proof of concept)
 
+[![WebGPU World running in the browser](assets/screenshot.jpg)](https://estebanrfp.github.io/webgpu-world/)
+
 ### ▶ [Walk around it in your browser](https://estebanrfp.github.io/webgpu-world/)
 
 *Chromium-based browser with WebGPU. WASD to move, Q to fly, walk into the sea to swim, `0`–`6` for the weather.*
