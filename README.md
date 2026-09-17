@@ -152,6 +152,7 @@ webgpu-world/
 │   ├── avatar/             # GLB loader, voxel-builder, animation system + retargeting
 │   ├── systems/            # character, npc, movement, weather, input, sound, daynight, nameplate
 │   ├── geometry.js         # Plane / mesh generation
+│   ├── lighting.js         # Day/night cycle: sun direction, light position, shadow projection
 │   └── math.js             # Matrices, vectors, CPU heightmap sampler
 ├── assets/                 # Heightmap, textures, audio, character GLBs (rig + animations)
 ├── tests/                  # Playwright: two peers, one room
