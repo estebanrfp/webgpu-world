@@ -8,6 +8,17 @@
   <!-- Basis Universal Transcoder -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/libs/basis/basis_transcoder.js"></script>
   <style>
+    :root {
+      --accent: #4ff3ff;
+      --accent-ink: #04141a;
+      --panel-bg: rgba(10, 14, 18, 0.82);
+      --panel-border: rgba(255, 255, 255, 0.1);
+      --panel-radius: 14px;
+      --field-bg: rgba(255, 255, 255, 0.06);
+      --text: #fff;
+      --text-dim: rgba(255, 255, 255, 0.55);
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -175,6 +186,74 @@
       font-family: inherit;
     }
 
+    #enter-world {
+      border: 1px solid var(--panel-border);
+      border-radius: var(--panel-radius);
+      background: var(--panel-bg);
+      backdrop-filter: blur(12px);
+      color: var(--text);
+      padding: 26px 28px;
+      width: min(340px, calc(100vw - 40px));
+      font-family: inherit;
+      z-index: 300;
+    }
+
+    #enter-world::backdrop {
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(3px);
+    }
+
+    #enter-world h2 {
+      font-size: 17px;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+
+    #enter-world p {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-dim);
+      margin-bottom: 18px;
+    }
+
+    #player-name-input {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--panel-border);
+      border-radius: 9px;
+      background: var(--field-bg);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 14px;
+      outline: none;
+    }
+
+    #player-name-input:focus {
+      border-color: var(--accent);
+    }
+
+    #enter-btn {
+      width: 100%;
+      margin-top: 12px;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 9px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    #enter-btn:hover {
+      filter: brightness(1.12);
+    }
+
+    #controls .stats-group #player-name {
+      color: var(--accent);
+    }
+
     #loading {
       position: fixed;
       top: 50%;
@@ -209,6 +288,16 @@
 <body>
   <div id="loading">🌍 Initializing WebGPU World...</div>
 
+  <dialog id="enter-world">
+    <h2>Enter the world</h2>
+    <p>Pick a name. Everyone else in the world will see it above your head.</p>
+    <form method="dialog">
+      <input id="player-name-input" type="text" maxlength="16" placeholder="Your name"
+        autocomplete="off" spellcheck="false">
+      <button id="enter-btn" value="enter">Enter World</button>
+    </form>
+  </dialog>
+
   <canvas id="canvas"></canvas>
 
   <div id="controls" class="hidden">
@@ -232,6 +321,8 @@
     <div class="control-group stats-group">
       <p>FPS: <span id="fps">0</span></p>
       <p>Position: <span id="position">0, 50, 0</span></p>
+      <p>Player: <span id="player-name">—</span></p>
+      <p>Peers: <span id="peer-count">0</span></p>
     </div>
   </div>
 
@@ -307,10 +398,21 @@
       createNameplateSystem,
       createMovementSystem,
       createDayNightSystem,
+      // Networking
+      createPresenceSystem,
+      createOfflinePresence,
+      sanitizeName,
     } from './lib/index.js';
 
     // Make config globally accessible for debugging/tweaking
     window.CONFIG = CONFIG;
+
+    // Remote players read orange; the local player stays cyan.
+    const PEER_NAMEPLATE_COLOR = '#ffaa33';
+
+    // How many remote players the world shows at once. Drives both the NPC
+    // system's pre-allocated slots and the nameplate texture array.
+    const PEER_SLOT_COUNT = 16;
 
     const loadingEl = document.getElementById('loading');
     const errorEl = document.getElementById('error');
@@ -507,23 +609,25 @@
       minSeparation: CONFIG.npc.minSeparation,
       baseSpeed: CONFIG.npc.baseSpeed,
       runSpeed: CONFIG.npc.runSpeed,
+      peerSlotCount: PEER_SLOT_COUNT,
     });
     // Start loading NPCs asynchronously
     npcSystem.init();
+    window.npcSystem = npcSystem;   // console handle (matches window.CONFIG)
 
     // ============================================
     // Nameplate System - Canvas2D rendered nameplates (Orillusion-style)
     // ============================================
     const nameplateSystem = createNameplateSystem(device, {
       cameraBuffer,
-      maxEntities: CONFIG.npc.count + 1, // NPCs + player
+      maxInstances: CONFIG.npc.count + 1 + PEER_SLOT_COUNT, // NPCs + player + remote players
     });
 
     function formatState(state) {
       switch (state) {
-        case 'idle': return 'Quieto';
-        case 'walking': return 'Caminando';
-        case 'running': return 'Corriendo';
+        case 'idle': return 'Idle';
+        case 'walking': return 'Walking';
+        case 'running': return 'Running';
         case 'following': return 'Following';
         default: return state ? String(state) : '';
       }
@@ -1063,6 +1167,14 @@
     // Render Loop
     // ============================================
     let lastT = performance.now(), totalT = 0, frames = 0, fps = 0, fpsT = 0;
+
+    // Frame cap. The gap between animation frames is far too jittery to test
+    // directly (4-12 ms on a nominally 8.3 ms 120 Hz panel), so draw whenever we
+    // are still under the target AVERAGE rate. That is self-correcting and never
+    // drops to a lower harmonic the way a per-gap threshold does.
+    const frameInterval = CONFIG.render.maxFPS > 0 ? 1000 / CONFIG.render.maxFPS : 0;
+    let capStart = performance.now();
+    let capDrawn = 0;
     
     // Initialize day/night UI controls
     dayNightSystem.initUI({
@@ -1071,12 +1183,47 @@
       display: document.getElementById('time-display')
     });
 
-    // Show UI
+    // ============================================
+    // Entry gate: pick a name, then join the world
+    // ============================================
     loadingEl.classList.add('hidden');
+
+    const enterDialog = document.getElementById('enter-world');
+    const nameInput = document.getElementById('player-name-input');
+    const peerCountEl = document.getElementById('peer-count');
+
+    nameInput.value = localStorage.getItem('wgpu_player_name') ?? '';
+    enterDialog.showModal();
+    await new Promise((done) => enterDialog.addEventListener('close', done, { once: true }));
+
+    const playerName = sanitizeName(nameInput.value);
+    localStorage.setItem('wgpu_player_name', playerName);
+    document.getElementById('player-name').textContent = playerName;
+
+    // Show UI
     controlsEl.classList.remove('hidden');
+
+    // P2P presence over GenosDB. It connects in the background so the world
+    // starts right away; until it is up (or if it never is) this is a no-op.
+    let presence = createOfflinePresence();
+    let lastPeerCount = -1;
+    createPresenceSystem({ name: playerName }).then((system) => { presence = system; });
+    window.presence = { getPeers: () => presence.getPeers(), get online() { return presence.online === true; } };
 
     function render() {
       const now = performance.now();
+
+      // Already at the target rate for this window: reschedule, draw nothing.
+      if (frameInterval && now - capStart < capDrawn * frameInterval) {
+        requestAnimationFrame(render);
+        return;
+      }
+      capDrawn++;
+      if (now - capStart >= 1000) {   // restart the window so the counters stay small
+        capStart = now;
+        capDrawn = 1;
+      }
+
       const dt = (now - lastT) / 1000;
       lastT = now;
       totalT += dt;
@@ -1182,10 +1329,22 @@
       const inWater = terrainHeight < waterLevel && charPos.y < waterLevel + 1.0;
       soundSystem.updateMovementSounds(isMoving, isSprinting, isFlying, isJumping, inWater);
 
-      // Update NPCs (AI behavior, animation, position)
+      // === P2P presence ===
+      // Broadcast the local player (throttled to 12 Hz inside) and ease the
+      // remote ones toward their last snapshot.
+      presence.broadcast(charPos, charRotation, characterSystem.animationSystem?.currentAnimation?.name ?? 'Idle');
+      presence.update(dt);
+      const remotePlayers = presence.getPeers();
+      if (remotePlayers.length !== lastPeerCount) {
+        lastPeerCount = remotePlayers.length;
+        peerCountEl.textContent = lastPeerCount;
+      }
+
+      // Update NPCs (AI behavior, animation, position) and the remote players
       if (npcSystem.isReady()) {
         // Use accurate terrain height calculation (matches shader)
         npcSystem.update(dt, charPos.x, charPos.y, charPos.z, getTerrainHeightAt);
+        npcSystem.syncPeers(remotePlayers);   // before updateUniforms: it writes their model matrices
         npcSystem.updateUniforms(CONFIG.character.scale);  // Fixed: was modelScale (undefined)
         
         // Update HUD for NPCs (billboard nameplates)
@@ -1194,6 +1353,7 @@
         
         // Include player avatar in HUD list
         const playerAvatar = {
+          name: playerName,
           x: charPos.x,
           y: charPos.y,
           z: charPos.z,
@@ -1227,7 +1387,23 @@
             color: accentColor,
           };
         });
-        nameplateSystem.update(nameplateEntities, cameraPos);
+        // Keyed by slot, not by peer id: the key set is bounded by
+        // PEER_SLOT_COUNT, so nameplate textures are reused across rejoins.
+        // Two peers sharing a name still get one nameplate each.
+        const peerEntities = npcSystem.getPeerSlots()
+          .filter((slot) => slot.active)
+          .map((slot) => ({
+            id: slot.id,
+            name: slot.name,
+            status: formatState(slot.state),
+            state: slot.state,
+            x: slot.x,
+            y: slot.y,
+            z: slot.z,
+            health: 1.0,
+            color: PEER_NAMEPLATE_COLOR,
+          }));
+        nameplateSystem.update(nameplateEntities.concat(peerEntities), cameraPos);
       }
 
       // === Third Person Camera ===
