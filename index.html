@@ -187,6 +187,9 @@
     }
 
     #enter-world {
+      /* The global `* { margin: 0 }` reset kills the margin:auto a UA gives a
+         <dialog>, which is what centres it. Put it back. */
+      margin: auto;
       border: 1px solid var(--panel-border);
       border-radius: var(--panel-radius);
       background: var(--panel-bg);
@@ -199,8 +202,7 @@
     }
 
     #enter-world::backdrop {
-      background: rgba(0, 0, 0, 0.55);
-      backdrop-filter: blur(3px);
+      background: rgba(0, 0, 0, 0.3);
     }
 
     #enter-world h2 {
@@ -1192,21 +1194,29 @@
     const nameInput = document.getElementById('player-name-input');
     const peerCountEl = document.getElementById('peer-count');
 
+    // These are read by the render loop, so they exist before it starts.
+    let playerName = 'Player';
+    let presence = createOfflinePresence();
+    let lastPeerCount = -1;
+
+    // Draw the world first and open the dialog over it: the island, the sea and
+    // the NPC crowd are the argument for pressing the button. The player stays
+    // put because input.js ignores keys typed into a field.
+    render();
+
     nameInput.value = localStorage.getItem('wgpu_player_name') ?? '';
     enterDialog.showModal();
     await new Promise((done) => enterDialog.addEventListener('close', done, { once: true }));
 
-    const playerName = sanitizeName(nameInput.value);
+    playerName = sanitizeName(nameInput.value);
     localStorage.setItem('wgpu_player_name', playerName);
     document.getElementById('player-name').textContent = playerName;
 
     // Show UI
     controlsEl.classList.remove('hidden');
 
-    // P2P presence over GenosDB. It connects in the background so the world
-    // starts right away; until it is up (or if it never is) this is a no-op.
-    let presence = createOfflinePresence();
-    let lastPeerCount = -1;
+    // P2P presence over GenosDB, once the player has actually entered. It
+    // connects in the background; until it is up this stays a no-op.
     createPresenceSystem({ name: playerName }).then((system) => { presence = system; });
     window.presence = { getPeers: () => presence.getPeers(), get online() { return presence.online === true; } };
 
@@ -2020,7 +2030,6 @@
     });
 
     console.log('🌍 WebGPU World started!');
-    render();
   </script>
 </body>
 
