@@ -388,6 +388,7 @@
       translate,
       scale,
       getTerrainHeightAt,
+      setHeightmap,
       // Lighting / Day-Night Cycle
       getLightDirection,
       getFormattedTime,
@@ -708,6 +709,45 @@
     // ============================================
     // Create Pipelines
     // ============================================
+    // ============================================
+    // Island heightmap - one PNG drives the terrain mesh, the shadow pass, the
+    // ocean depth and the CPU physics. Loaded before any bind group needs it.
+    // ============================================
+    const heightmapBitmap = await createImageBitmap(await (await fetch(CONFIG.heightmap.url)).blob());
+    const heightmapSize = heightmapBitmap.width;
+    const heightmapTexture = device.createTexture({
+      size: [heightmapSize, heightmapSize],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+      label: 'Island Heightmap',
+    });
+    device.queue.copyExternalImageToTexture(
+      { source: heightmapBitmap },
+      { texture: heightmapTexture },
+      [heightmapSize, heightmapSize],
+    );
+
+    // clamp-to-edge: past the map's border the open sea carries on forever.
+    const heightmapSampler = device.createSampler({
+      magFilter: 'linear',
+      minFilter: 'linear',
+      addressModeU: 'clamp-to-edge',
+      addressModeV: 'clamp-to-edge',
+    });
+
+    // The CPU needs the same bytes for physics, NPCs and the camera.
+    {
+      const scratch = new OffscreenCanvas(heightmapSize, heightmapSize);
+      const scratchCtx = scratch.getContext('2d', { willReadFrequently: true });
+      scratchCtx.drawImage(heightmapBitmap, 0, 0);
+      const { data } = scratchCtx.getImageData(0, 0, heightmapSize, heightmapSize);
+      const texels = new Uint8Array(heightmapSize * heightmapSize);
+      for (let i = 0; i < texels.length; i++) texels[i] = data[i * 4];   // red channel
+      setHeightmap(texels, heightmapSize);
+      console.log(`✅ Heightmap loaded: ${heightmapSize}×${heightmapSize}, covering ${CONFIG.heightmap.worldSize} world units`);
+    }
+    const heightmapView = heightmapTexture.createView();
+
     const cameraLayout = device.createBindGroupLayout({
       entries: [{ binding: 0, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } }],
     });
@@ -722,6 +762,8 @@
     const shadowTerrainLayout = device.createBindGroupLayout({
       entries: [
         { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+        { binding: 1, visibility: GPUShaderStage.VERTEX, texture: { sampleType: 'float' } },      // Heightmap
+        { binding: 2, visibility: GPUShaderStage.VERTEX, sampler: { type: 'filtering' } },
       ],
     });
 
@@ -749,6 +791,8 @@
         { binding: 10, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Rock normal map
         { binding: 11, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Grass normal map
         { binding: 12, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Sand normal map
+        { binding: 13, visibility: GPUShaderStage.VERTEX, texture: { sampleType: 'float' } },      // Heightmap
+        { binding: 14, visibility: GPUShaderStage.VERTEX, sampler: { type: 'filtering' } },
       ],
     });
 
@@ -766,6 +810,8 @@
         { binding: 1, visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
         { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },  // Water bump texture
         { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },    // Water sampler
+        { binding: 4, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },     // Heightmap
+        { binding: 5, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
       ],
     });
 
@@ -1031,6 +1077,8 @@
       layout: shadowTerrainLayout,
       entries: [
         { binding: 0, resource: { buffer: lightBuffer } },
+        { binding: 1, resource: heightmapView },
+        { binding: 2, resource: heightmapSampler },
       ],
     });
 
@@ -1050,6 +1098,8 @@
         { binding: 10, resource: rockNormalTexture.createView() },
         { binding: 11, resource: grassNormalTexture.createView() },
         { binding: 12, resource: sandNormalTexture.createView() },
+        { binding: 13, resource: heightmapView },
+        { binding: 14, resource: heightmapSampler },
       ],
     });
 
@@ -1765,6 +1815,8 @@
             { binding: 1, resource: oceanBuffer },
             { binding: 2, resource: waterBumpTexture.createView() },
             { binding: 3, resource: textureSampler },
+            { binding: 4, resource: heightmapView },
+            { binding: 5, resource: heightmapSampler },
           ],
         });
         console.log('✅ Ocean bind group created with water bump texture!');

@@ -28,10 +28,10 @@ approaches can be compared side by side.
 
 ## What's in the world
 
-- **Bounded procedural island** — a single island (highland + mountains, gentle beaches, open sea all
-  around) generated from fractal noise. The player is kept near the origin so the world stays
-  **finite and jitter-free without a Floating Origin system** — coordinates never get large enough to
-  break Float32 precision.
+- **One authored island** — the terrain comes from a single heightmap (`assets/heightmap.png`): a
+  mountain ridge to the north-west, a closed bay to the east, sandy beaches and open sea all around.
+  The player is kept near the origin so the world stays **finite and jitter-free without a Floating
+  Origin system** — coordinates never get large enough to break Float32 precision.
 - **Day/night + weather** — animated sky, three-layer clouds, rain / heavy rain / storm with
   lightning, snow, and ambient + footstep audio.
 - **Ocean** — Gerstner waves, depth-based colour, caustics, foam, reflections, an underwater view, and
@@ -80,10 +80,11 @@ pnpm preview
 - **Finite world, no Floating Origin** — rather than a camera-relative coordinate system, the player
   is clamped to a small region around the island, so positions stay small and precise. The terrain
   mesh follows the camera, but the island shape is fixed in world space.
-- **One height function, five consumers** — the terrain vertex shader, the terrain shadow pass, the
-  GPU physics compute, the CPU sampler (NPCs / camera) and the ocean's depth-foam logic all evaluate
-  the **same** `getHeight`, so the rendered ground, the walkable ground and the water depth never
-  disagree.
+- **One heightmap, five consumers** — the terrain vertex shader, the terrain shadow pass, the GPU
+  physics compute, the CPU sampler (NPCs / camera) and the ocean's depth-foam logic all read the
+  **same PNG**, so the rendered ground, the walkable ground and the water depth never disagree. The
+  CPU half reproduces `textureSampleLevel` exactly — bilinear with texel centres at (i + 0.5) / size
+  — because half a texel of drift is an avatar hovering over its own shadow.
 - **Voxel avatars without a service** — characters are built from ~20 parameters and rigged to the
   Mixamo skeleton, so identity is a handful of bytes and never depends on a third-party API.
 - **Animation correctness** — keyframe `alpha` is clamped to `[0,1]` so Mixamo clips that start at
@@ -114,15 +115,21 @@ webgpu-world/
 
 ## Configuration
 
-Almost all tuning lives in [`lib/core/config.js`](lib/core/config.js): island size & height, water
+The island itself is `assets/heightmap.png`, mapped by `CONFIG.heightmap`: `worldSize` is how many
+world units the square map covers, and a texel's 0..255 becomes `minHeight … minHeight + heightRange`.
+Those bounds are chosen so the existing biomes land where they should — sand at 15, grass at 35, rock
+at 55, snow at 75, with the water line at 8. Sampling is clamp-to-edge, so past the map's border the
+open sea carries on forever.
+
+Almost all other tuning lives in [`lib/core/config.js`](lib/core/config.js): island size & height, water
 appearance, weather presets, movement and swimming, day/night timing, avatar look, audio.
 
 `render.maxFPS` caps the frame rate at **60** by default. `requestAnimationFrame` fires at the
 display's refresh rate, and drawing this world 120 times a second costs a lot of GPU for something you
 cannot see while walking around an island — it is the difference between a warm laptop and a quiet one
 when you leave the tab open. Set it to `0` to draw every animation frame. The island
-shape itself is the `getHeight` function, duplicated **identically** across `terrain.wgsl.js`,
-`shadow.wgsl.js`, `oceanShader.wgsl.js` and `math.js` — change all four together.
+sampling expression is duplicated **identically** across `terrain.wgsl.js`, `shadow.wgsl.js`,
+`oceanShader.wgsl.js` and `math.js` — change all four together.
 
 ## Requirements
 
