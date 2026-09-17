@@ -7,8 +7,12 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: 'assets/**/*',
-          dest: 'assets'
+          // Copy the tree, not 'assets/**/*': that glob matches directories as
+          // well as files, so every file was emitted once inside its folder and
+          // again flattened next to it - three copies of each asset, and a
+          // Pages artifact over the 1 GB limit.
+          src: 'assets',
+          dest: '.'
         }
       ]
     })

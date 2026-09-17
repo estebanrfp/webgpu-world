@@ -11,8 +11,9 @@ virtual world — terrain, ocean, sky, weather, animated avatars, an NPC crowd a
 **directly on the native WebGPU API**, with hand-written WGSL and **no high-level 3-D engine** (no
 Three.js, Babylon or Orillusion)?*
 
-> Everything runs in the browser on WebGPU — no install, no account, no backend. The only thing on
-> the wire is a signaling relay that introduces peers to each other; after that they talk directly.
+> Everything runs in the browser on WebGPU — no install, no account, no backend, and every asset is
+> served from this repo. The only thing on the wire is a signaling relay that introduces peers to
+> each other; after that they talk directly.
 
 ## Two worlds, two techniques
 
