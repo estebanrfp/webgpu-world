@@ -39,7 +39,7 @@ TypeGPU-Project-World/
 │   └── avatar/             # Avatar/GLB loading (TODO: extract from index.html)
 ├── assets/                 # World assets (models, textures, audio)
 │   ├── character/          # GLB models and source assets
-│   ├── sounds/             # Audio assets
+│   ├── audio/              # The six sound clips the world plays
 │   └── textures/           # Textures (.ktx2, .png, .jpg)
 ├── public/                 # Static assets
 ```
