@@ -1,7 +1,7 @@
 {
   "name": "webgpu-world",
   "version": "2.0.0",
-  "description": "WebGPU World - A native-WebGPU virtual world (proof of concept): procedural sky, bounded island terrain, ocean, weather, runtime voxel avatars and NPCs - no 3D engine",
+  "description": "WebGPU World - a shared 3-D virtual world on GenosDB: peer-to-peer multiplayer with no game server, on an island rendered with the native WebGPU API and no 3-D engine",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -20,10 +20,14 @@
     "vite-plugin-static-copy": "3.1.4"
   },
   "keywords": [
+    "genosdb",
+    "p2p",
+    "webrtc",
+    "multiplayer",
+    "decentralized",
     "webgpu",
-    "procedural",
-    "virtual-world",
-    "native"
+    "wgsl",
+    "virtual-world"
   ],
   "author": "Esteban Fuster Pozzi (@estebanrfp)",
   "license": "MIT"
