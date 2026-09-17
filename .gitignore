@@ -5,3 +5,7 @@ archive/
 *.log
 pnpm-debug.log*
 tmp/
+
+# Playwright
+test-results/
+playwright-report/
